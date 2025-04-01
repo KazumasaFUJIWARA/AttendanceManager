@@ -1,0 +1,18 @@
+import requests
+
+# TeamsのWebhook URLを指定
+webhook_url = "https://ryu365.webhook.office.com/webhookb2/585cc2b0-ed47-41cd-8bd1-39b5befc07b2@23b65fdf-a4e3-4a19-b03d-12b1d57ad76e/IncomingWebhook/eee629f8a82b4427baf47019708e6b1b/3662ba78-b3f0-47e3-9820-376798dc17d5"
+
+# メッセージの内容を作成
+message = {
+    "text": "hage",
+    "title": "Important Message",
+    "summary": "This is a summary of the message."
+}
+
+# POSTリクエストを送信
+response = requests.post(webhook_url, json=message)
+
+# レスポンスを表示
+print(response.text)
+
