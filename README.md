@@ -1,58 +1,140 @@
 # AttendanceManager
 
 ## 概要
-学生の実習室の入退室の状況を、管理する為のシステムです。
-学生証をFelicaリーダーで読み込み、Sharepoint上のリストにデータを送信します。
-リストを経由して、現在の利用状況や、最近の利用状況のレポートを作成します。
+	学生の実習室の入退室の状況を管理するためのシステムです。
+	学生証をFelicaリーダーで読み込み、サーバーにデータを送信して管理します。
+	現在の利用状況や最近の利用状況のレポートを作成することができます。
 
-## Flow
-### 実習室での操作
-```mermaid
-graph TD;
-	INPUT["Felica 入力"]-->POST["Graph APIでリストに送信"]
-	POST-->STATUS["入室か退室かの情報を取得し, 読み取りを行った通知を画面で表示する"]
+## システム構成
+
+### バックエンド
+	- **FastAPI**: 高速なPython製WebフレームワークでRESTful APIを提供
+	- **SQLite**: 軽量で高性能なデータベース
+	- **JavaScript**: フロントエンドの実装
+
+### フロントエンド
+	- HTML/CSS/JavaScript
+	- モダンなUIライブラリ（予定）
+
+## システムアーキテクチャ
+
+### データベース構造
+```sql
+-- 学生情報テーブル
+CREATE TABLE students (
+	student_id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	core_time_1_day INTEGER DEFAULT 0,  -- 1:月曜 2:火曜 ... 7:日曜
+	core_time_1_period INTEGER DEFAULT 0,  -- 1:1限 2:2限 ... 6:6限
+	core_time_2_day INTEGER DEFAULT 0,
+	core_time_2_period INTEGER DEFAULT 0,
+	core_time_violations INTEGER DEFAULT 0,
+);
+
+コアタイムは登録が間に合わないかもしれないので、
+初期値を0とする.
+
+-- 入退室記録テーブル
+CREATE TABLE attendance_logs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	student_id TEXT,
+	entry_time DATETIME,
+	exit_time DATETIME,
+	FOREIGN KEY (student_id) REFERENCES students(student_id)
+);
+
+-- 現在の入室状況テーブル
+CREATE TABLE current_status (
+	student_id TEXT PRIMARY KEY,
+	entry_time DATETIME,
+	FOREIGN KEY (student_id) REFERENCES students(student_id)
+);
+
+-- アラート記録テーブル
+CREATE TABLE alerts (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	student_id TEXT,
+	alert_date DATE,
+	alert_type TEXT,
+	FOREIGN KEY (student_id) REFERENCES students(student_id)
+);
 ```
 
-### 実習室から利用するapi
+## API エンドポイント
+
+### 入退室管理 API
 ```mermaid
 graph TD;
-	INPUT2["学籍番号と時刻を取得"] --> REC["EVENTリストに学籍番号と時刻を追加"]
-	REC-->UPD{"CURRENTリストの対応する学籍番号の値を操作"}
-	UPD-->|入室時刻が空|UPD1["入室時刻に入力時刻を入れる"]
-	UPD1-->NAME["ROSTERリストから学籍番号に対応する氏名を取得"]
-	NAME-->OUT["jsonでname:名前, status:入室を返す"]
-	UPD-->|入室時刻が空でない|UPD2["LOGリストに, 学籍番号, 入室時刻, 退室時刻の行を追加"]
-	UPD2-->UPD3["CURRENTリストの対応する入室時刻を削除"]
-	UPD3-->NAME2["ROSTERリストから学籍番号に対応する氏名を取得"]
-	NAME2-->OUT2["jsonでname:名前, status:退室を返す"]
+	INPUT["Felica 入力"] --> POST["POST /api/attendance"]
+	POST --> CHECK["入退室状態チェック"]
+	CHECK --> |入室|ENTRY["入室処理"]
+	CHECK --> |退室|EXIT["退室処理"]
+	ENTRY --> RESPONSE["レスポンス返却"]
+	EXIT --> RESPONSE
 ```
 
-### コアタイム監視api
-授業の開始時刻に実習室のPCから出す。
+### コアタイム監視 API
 ```mermaid
 graph TD;
-	POST["開始コマの番号を送信"]-->FETCH["ROSTERリストのコアタイム1,2を参照し, 該当学生番号を確認"]
-	FETCH-->CHECK["該当者の学籍番号に対して, CURRENTリストの入室時刻が空であれば, 名前を記録"]
-	CHECK-->LOG["ALERTリストに、学籍番号、日にち、時限を記録"]
-	LOG-->ALERT["違反学籍番号を管理者のTELEGRAMに通告"]
+	TIMER["定時実行"] --> CHECK["GET /api/core-time/check/{period}"]
+	CHECK --> FETCH["該当時限の学生確認"]
+	FETCH --> VERIFY["入室状態確認"]
+	VERIFY --> |違反あり|ALERT["アラート発行"]
+	VERIFY --> |違反なし|OK["正常終了"]
 ```
 
-### RESET用のapi
-退室忘れの場合は入室を無効かします。
-毎日0時に実習室のPCからリクエスト
-```mermaid
-graph TD;
-	POST["RESET依頼"]-->UPD["CURRENTリスト入室時刻が空でない場合は、対応する学籍番号を記録し、入室時刻を空にする"]
-	UPD-->ALERT["監視者のTelegramに違反学籍番号を通告"]
+## エンドポイント一覧
+
+### 入退室管理
+	- `POST /api/attendance`
+		- 学生の入退室を記録
+	- `GET /api/attendance/{student_id}`
+		- 特定学生の入退室履歴を取得
+	- `GET /api/current-status`
+		- 現在の入室状況を取得
+
+### 学生管理
+	- `GET /api/students`
+		- 登録済み学生一覧を取得
+	- `POST /api/students`
+		- 新規学生を登録
+	- `PUT /api/students/{student_id}`
+		- 学生情報を更新
+
+### コアタイム管理
+	- `GET /api/core-time/check/{period}`
+		- 指定時限のコアタイムチェック
+	- `GET /api/core-time/violations`
+		- コアタイム違反履歴の取得
+
+## セットアップ方法
+
+1. リポジトリのクローン
+```bash
+git clone https://github.com/yourusername/AttendanceManager.git
+cd AttendanceManager
 ```
 
-## WEBとPower BIによるレポート機能
-### HOME: 現在の利用状況
-CURRENTリストとROSTERリストから、
-登録している学生の現在の利用状況と、
-ここ一週間の利用時間の総計総計を表示する
+2. サーバーの起動
+```bash
+cd server
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
 
-### REPORT: 学生別利用状況
-ここ一週間の日ごとの利用状況を棒グラフで表示する。
-また、コアタイムの日にちは赤表示し、
-コアタイムのリストも併せて表示する。
+3. クライアント（端末）のセットアップ
+```bash
+cd client
+pip install -r requirements.txt
+python AttendanceManager.py
+```
+
+## 開発環境
+	- Python 3.9+
+	- FastAPI
+	- SQLite3
+	- Node.js 16+
+	- Docker
+
+## ライセンス
+MIT License
