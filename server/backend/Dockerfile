@@ -1,6 +1,6 @@
 FROM python:3.9-slim
 
-WORKDIR /app/backend
+WORKDIR /app
 
 # 必要なパッケージをインストール
 COPY requirements.txt .
