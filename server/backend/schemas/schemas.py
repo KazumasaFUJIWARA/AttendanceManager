@@ -20,19 +20,22 @@ class Student(StudentBase):
         from_attributes = True
 
 # AttendanceLog schemas
-class AttendanceLogBase(BaseModel):
+class AttendanceLogCreate(BaseModel):
+    student_id: str
+    time: datetime  # entry_timeからtimeに変更
+
+class AttendanceLog(BaseModel):
+    id: Optional[int] = None
     student_id: str
     entry_time: datetime
     exit_time: Optional[datetime] = None
 
-class AttendanceLogCreate(AttendanceLogBase):
-    pass
-
-class AttendanceLog(AttendanceLogBase):
-    id: int
-
     class Config:
         from_attributes = True
+
+class AttendanceResponse(BaseModel):
+    name: str
+    status: str
 
 # CurrentStatus schemas
 class CurrentStatusBase(BaseModel):

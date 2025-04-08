@@ -14,10 +14,10 @@ import base64
 import json
 import re
 from sqlalchemy.orm import Session
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List
 from models.models import Student, AttendanceLog, CurrentStatus, Alert
-from schemas.schemas import StudentCreate, Student, AttendanceLogCreate, AttendanceLog, CurrentStatusCreate, CurrentStatus, AlertCreate, Alert
+from schemas.schemas import StudentCreate, Student as StudentSchema, AttendanceLogCreate, AttendanceLog as AttendanceLogSchema, CurrentStatusCreate, CurrentStatus as CurrentStatusSchema, AlertCreate, Alert as AlertSchema, AttendanceResponse
 from db.database import get_db
 # }}}
 
@@ -30,14 +30,6 @@ logger.setLevel(logging.INFO)
 
 logger.info("Start FastAPI")
 #}}}
-
-# 静的ファイルを "/static" にマウント
-app.mount("/static", StaticFiles(directory="/app/public"), name="static")
-
-# ルートパス "/" で index.html を返す
-@app.get("/")
-async def read_index():
-	return FileResponse("/app/public/index.html")
 
 #{{{ # データベース接続
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +52,7 @@ def get_db_connection():
 #}}}
 
 #{{{ 学生管理API
-@app.post("/api/students/", response_model=Student)
+@app.post("/api/students/", response_model=StudentSchema)
 def create_student(student: StudentCreate, db: Session = Depends(get_db)):
 	db_student = Student(**student.dict())
 	db.add(db_student)
@@ -68,12 +60,12 @@ def create_student(student: StudentCreate, db: Session = Depends(get_db)):
 	db.refresh(db_student)
 	return db_student
 
-@app.get("/api/students/", response_model=List[Student])
+@app.get("/api/students/", response_model=List[StudentSchema])
 def read_students(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 	students = db.query(Student).offset(skip).limit(limit).all()
 	return students
 
-@app.get("/api/students/{student_id}", response_model=Student)
+@app.get("/api/students/{student_id}", response_model=StudentSchema)
 def read_student(student_id: str, db: Session = Depends(get_db)):
 	student = db.query(Student).filter(Student.student_id == student_id).first()
 	if student is None:
@@ -82,7 +74,7 @@ def read_student(student_id: str, db: Session = Depends(get_db)):
 #}}}
 
 #{{{ 入退室管理API
-@app.post("/api/attendance/", response_model=AttendanceLog)
+@app.post("/api/attendance/", response_model=AttendanceResponse)
 def record_attendance(attendance: AttendanceLogCreate, db: Session = Depends(get_db)):
 	# 学生が存在するか確認
 	student = db.query(Student).filter(Student.student_id == attendance.student_id).first()
@@ -96,39 +88,59 @@ def record_attendance(attendance: AttendanceLogCreate, db: Session = Depends(get
 
 	if current_status is None:
 		# 入室処理
-		db_attendance = AttendanceLog(**attendance.dict())
+		db_attendance = AttendanceLog(
+			student_id=attendance.student_id,
+			entry_time=attendance.time,
+			exit_time=None  # 明示的にNoneを設定
+		)
 		db.add(db_attendance)
 		
 		# 現在の入室状況を更新
 		current_status = CurrentStatus(
 			student_id=attendance.student_id,
-			entry_time=attendance.entry_time
+			entry_time=attendance.time
 		)
 		db.add(current_status)
+		db.commit()
+		return {"name": student.name, "status": "入室"}
 	else:
 		# 退室処理
 		# 既存の入室記録を更新
 		attendance_log = db.query(AttendanceLog).filter(
 			AttendanceLog.student_id == attendance.student_id,
-			AttendanceLog.exit_time.is_(None)
-		).first()
+			AttendanceLog.exit_time.is_(None)  # exit_timeがNullのレコードを検索
+		).order_by(AttendanceLog.entry_time.desc()).first()  # 最新の記録を取得
+		
 		if attendance_log:
-			attendance_log.exit_time = attendance.entry_time
+			attendance_log.exit_time = attendance.time
 		
 		# 現在の入室状況を削除
 		db.delete(current_status)
+		db.commit()
+		return {"name": student.name, "status": "退室"}
 
-	db.commit()
-	return attendance_log
-
-@app.get("/api/attendance/{student_id}", response_model=List[AttendanceLog])
-def read_student_attendance(student_id: str, db: Session = Depends(get_db)):
-	attendance_logs = db.query(AttendanceLog).filter(
+@app.get("/api/attendance/{student_id}", response_model=List[AttendanceLogSchema])
+def read_student_attendance(
+	student_id: str,
+	days: int = 0,  # 日数パラメータを追加（デフォルトは0）
+	db: Session = Depends(get_db)
+):
+	# 基本のクエリを作成
+	query = db.query(AttendanceLog).filter(
 		AttendanceLog.student_id == student_id
-	).all()
+	)
+	
+	# 日数が0より大きい場合、指定された日数分のレコードを取得
+	if days > 0:
+		# 現在時刻から指定された日数分前の日時を計算
+		cutoff_date = datetime.now() - timedelta(days=days)
+		query = query.filter(AttendanceLog.entry_time >= cutoff_date)
+	
+	# レコードを取得（入室時刻の降順でソート）
+	attendance_logs = query.order_by(AttendanceLog.entry_time.desc()).all()
 	return attendance_logs
 
-@app.get("/api/current-status/", response_model=List[CurrentStatus])
+@app.get("/api/current-status/", response_model=List[CurrentStatusSchema])
 def read_current_status(db: Session = Depends(get_db)):
 	current_status = db.query(CurrentStatus).all()
 	return current_status
@@ -169,7 +181,7 @@ def check_core_time(period: int, db: Session = Depends(get_db)):
 	db.commit()
 	return {"violations": violations}
 
-@app.get("/api/core-time/violations", response_model=List[Alert])
+@app.get("/api/core-time/violations", response_model=List[AlertSchema])
 def read_core_time_violations(db: Session = Depends(get_db)):
 	alerts = db.query(Alert).filter(
 		Alert.alert_type == "core_time_violation"

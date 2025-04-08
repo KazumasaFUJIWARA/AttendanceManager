@@ -85,27 +85,103 @@ graph TD;
 
 ## エンドポイント一覧
 
-### 入退室管理
-	- `POST /api/attendance`
-		- 学生の入退室を記録
-	- `GET /api/attendance/{student_id}`
-		- 特定学生の入退室履歴を取得
-	- `GET /api/current-status`
-		- 現在の入室状況を取得
+### 学生管理API
+- `POST /api/students/`
+  - 入力：
+    ```json
+    {
+      "student_id": "学籍番号",
+      "name": "学生名",
+      "core_time_1_day": "コアタイム1の曜日（1-7）",
+      "core_time_1_period": "コアタイム1の時限（1-6）",
+      "core_time_2_day": "コアタイム2の曜日（1-7）",
+      "core_time_2_period": "コアタイム2の時限（1-6）"
+    }
+    ```
+  - 出力：登録された学生情報
 
-### 学生管理
-	- `GET /api/students`
-		- 登録済み学生一覧を取得
-	- `POST /api/students`
-		- 新規学生を登録
-	- `PUT /api/students/{student_id}`
-		- 学生情報を更新
+- `GET /api/students/`
+  - 入力：
+    - `skip`: スキップするレコード数（デフォルト: 0）
+    - `limit`: 取得する最大レコード数（デフォルト: 100）
+  - 出力：学生一覧
 
-### コアタイム管理
-	- `GET /api/core-time/check/{period}`
-		- 指定時限のコアタイムチェック
-	- `GET /api/core-time/violations`
-		- コアタイム違反履歴の取得
+- `GET /api/students/{student_id}`
+  - 入力：
+    - `student_id`: 学籍番号
+  - 出力：指定された学生の情報
+
+### 入退室管理API
+- `POST /api/attendance/`
+  - 入力：
+    ```json
+    {
+      "student_id": "学籍番号",
+      "time": "日時（ISO 8601形式）"
+    }
+    ```
+  - 出力：
+    ```json
+    {
+      "name": "学生名",
+      "status": "入室" または "退室"
+    }
+    ```
+
+- `GET /api/attendance/{student_id}`
+  - 入力：
+    - `student_id`: 学籍番号
+    - `days`: 取得する日数（デフォルト: 0）
+      - 0: 全てのレコードを取得
+      - 1以上: 現在時刻から指定された日数分前までのレコードを取得
+  - 出力：出席記録のリスト（入室時刻の降順）
+    ```json
+    [
+      {
+        "id": "レコードID",
+        "student_id": "学籍番号",
+        "entry_time": "入室時刻",
+        "exit_time": "退室時刻"
+      }
+    ]
+    ```
+
+- `GET /api/current-status/`
+  - 入力：なし
+  - 出力：現在入室中の学生のリスト
+    ```json
+    [
+      {
+        "student_id": "学籍番号",
+        "entry_time": "入室時刻"
+      }
+    ]
+    ```
+
+### コアタイム管理API
+- `GET /api/core-time/check/{period}`
+  - 入力：
+    - `period`: 時限（1-6）
+  - 出力：
+    ```json
+    {
+      "violations": ["コアタイム違反した学生の学籍番号リスト"]
+    }
+    ```
+
+- `GET /api/core-time/violations`
+  - 入力：なし
+  - 出力：コアタイム違反のアラート一覧
+    ```json
+    [
+      {
+        "id": "アラートID",
+        "student_id": "学籍番号",
+        "alert_date": "違反日",
+        "alert_type": "core_time_violation"
+      }
+    ]
+    ```
 
 ## セットアップ方法
 
@@ -134,7 +210,6 @@ python AttendanceManager.py
 	- FastAPI
 	- SQLite3
 	- Node.js 16+
-	- Docker
 
 ## ライセンス
 MIT License
