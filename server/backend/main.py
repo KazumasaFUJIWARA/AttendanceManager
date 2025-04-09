@@ -2,8 +2,9 @@
 
 # {{{ import
 from fastapi import FastAPI, HTTPException, Path, File, UploadFile, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 import os
@@ -22,6 +23,24 @@ from db.database import get_db
 # }}}
 
 app = FastAPI(title="Attendance Manager API")
+
+# CORSミドルウェアの設定
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=["*"],  # 本番環境では適切に制限してください
+	allow_credentials=True,
+	allow_methods=["*"],
+	allow_headers=["*"],
+)
+
+# 静的ファイルの設定
+app.mount("/static", StaticFiles(directory="../public"), name="static")
+
+# HTMLファイルを配信するエンドポイント
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    with open("../public/index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 #{{{ ロギングの設定
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
