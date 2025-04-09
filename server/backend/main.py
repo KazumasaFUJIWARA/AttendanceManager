@@ -33,10 +33,7 @@ app.add_middleware(
 	allow_headers=["*"],
 )
 
-# 静的ファイルの設定
-app.mount("/static", StaticFiles(directory="../public"), name="static")
-
-# HTMLファイルを配信するエンドポイント
+# 静的ファイルの設定（APIエンドポイントの後にマウント）
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open("../public/index.html", "r", encoding="utf-8") as f:
@@ -262,3 +259,7 @@ def read_core_time_violations(db: Session = Depends(get_db)):
 	).all()
 	return alerts
 #}}}
+
+# 静的ファイルの設定（最後にマウント）
+app.mount("/js", StaticFiles(directory="../public/js"), name="js")
+app.mount("/", StaticFiles(directory="../public", html=True), name="static")

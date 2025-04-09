@@ -79,7 +79,7 @@ async function loadStudentData() {
                     <td>${student.student_id}</td>
                     <td>${student.name}</td>
                     <td class="${isPresent ? 'status-present' : 'status-absent'}">
-                        ${isPresent ? '入室中' : '退室中'}
+                        <span>${isPresent ? '入室中 ✓' : '退室中 ×'}</span>
                     </td>
                     <td>${totalHours.toFixed(1)}時間</td>
                     <td>${coreTime1}</td>
