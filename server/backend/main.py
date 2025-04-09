@@ -144,6 +144,61 @@ def read_student_attendance(
 def read_current_status(db: Session = Depends(get_db)):
 	current_status = db.query(CurrentStatus).all()
 	return current_status
+
+@app.post("/api/attendance-now/{student_id}", response_model=AttendanceResponse)
+def record_attendance_now(
+	student_id: str,
+	db: Session = Depends(get_db)
+):
+	"""
+	現在時刻を使用して入退室を記録するエンドポイント
+	"""
+	# 現在時刻を取得
+	current_time = datetime.now()
+	
+	# 学生の存在確認
+	student = db.query(Student).filter(Student.student_id == student_id).first()
+	if not student:
+		raise HTTPException(status_code=404, detail="Student not found")
+	
+	# 現在の入室状況を確認
+	current_status = db.query(CurrentStatus).filter(
+		CurrentStatus.student_id == student_id
+	).first()
+	
+	if not current_status:
+		# 入室処理
+		current_status = CurrentStatus(
+			student_id=student_id,
+			entry_time=current_time
+		)
+		db.add(current_status)
+		
+		# 出席ログに記録
+		attendance_log = AttendanceLog(
+			student_id=student_id,
+			entry_time=current_time,
+			exit_time=None
+		)
+		db.add(attendance_log)
+		
+		db.commit()
+		return AttendanceResponse(name=student.name, status="入室")
+	else:
+		# 退室処理
+		# 出席ログを更新
+		attendance_log = db.query(AttendanceLog).filter(
+			AttendanceLog.student_id == student_id,
+			AttendanceLog.exit_time == None
+		).order_by(AttendanceLog.entry_time.desc()).first()
+		
+		if attendance_log:
+			attendance_log.exit_time = current_time
+		
+		# 現在の入室状況を削除
+		db.delete(current_status)
+		db.commit()
+		return AttendanceResponse(name=student.name, status="退室")
 #}}}
 
 #{{{ コアタイム管理API
