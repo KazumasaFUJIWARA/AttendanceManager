@@ -128,6 +128,18 @@ graph TD;
     }
     ```
 
+- `POST /api/attendance-now/{student_id}`
+  - 入力：
+    - URLパラメータ: `student_id`（学籍番号）
+  - 出力：
+    ```json
+    {
+      "name": "学生名",
+      "status": "入室" または "退室"
+    }
+    ```
+  - 説明：現在時刻を使用して入退室を記録します。timeパラメータの指定は不要です。
+
 - `GET /api/attendance/{student_id}`
   - 入力：
     - `student_id`: 学籍番号
@@ -191,25 +203,67 @@ git clone https://github.com/yourusername/AttendanceManager.git
 cd AttendanceManager
 ```
 
-2. サーバーの起動
+2. Docker環境のセットアップ
 ```bash
-cd server
-pip install -r requirements.txt
-uvicorn main:app --reload
+# Dockerイメージのビルドと起動
+docker-compose up -d
+
+# APIサーバーが http://localhost:8889 で起動します
 ```
 
-3. クライアント（端末）のセットアップ
+3. APIの動作確認
+- Swagger UI: http://localhost:8889/docs
+- ReDoc: http://localhost:8889/redoc
+
+## 基本的な使用方法
+
+1. 学生の登録
 ```bash
-cd client
-pip install -r requirements.txt
-python AttendanceManager.py
+curl -X POST "http://localhost:8889/api/students/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "student_id": "001",
+    "name": "テスト太郎",
+    "core_time_1_day": 1,
+    "core_time_1_period": 2,
+    "core_time_2_day": 3,
+    "core_time_2_period": 4
+  }'
+```
+
+2. 入室処理
+```bash
+curl -X POST "http://localhost:8889/api/attendance/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "student_id": "001",
+    "time": "2024-04-08T09:00:00"
+  }'
+```
+
+3. 退室処理
+```bash
+curl -X POST "http://localhost:8889/api/attendance/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "student_id": "001",
+    "time": "2024-04-08T17:00:00"
+  }'
+```
+
+4. 出席履歴の確認
+```bash
+curl "http://localhost:8889/api/attendance/001"
 ```
 
 ## 開発環境
-	- Python 3.9+
-	- FastAPI
-	- SQLite3
-	- Node.js 16+
+
+- Python 3.8+
+- FastAPI
+- SQLite3
+- Docker
+- Docker Compose
 
 ## ライセンス
-MIT License
+
+このプロジェクトはMITライセンスの下で公開されています。詳細は[LICENSE](LICENSE)ファイルを参照してください。
