@@ -242,13 +242,22 @@ def check_core_time(period: int, db: Session = Depends(get_db)):
                 violations.append(student.student_id)
                 # 違反回数を更新
                 student.core_time_violations += 1
-                # アラートを記録
-                alert = Alert(
-                    student_id=student.student_id,
-                    alert_date=current_time.date(),
-                    alert_period=period
-                )
-                db.add(alert)
+
+                # 同じ日の同じ時限の違反が既に記録されているか確認
+                existing_alert = db.query(Alert).filter(
+                    Alert.student_id == student.student_id,
+                    Alert.alert_date == current_time.date(),
+                    Alert.alert_period == period
+                ).first()
+
+                # 重複がない場合のみアラートを記録
+                if not existing_alert:
+                    alert = Alert(
+                        student_id=student.student_id,
+                        alert_date=current_time.date(),
+                        alert_period=period
+                    )
+                    db.add(alert)
 
         db.commit()
         return {"violations": violations}
