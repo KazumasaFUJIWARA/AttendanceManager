@@ -44,10 +44,10 @@
   - 入力: 
     ```json
     {
-      "core_time_1_day": 1-7,    // 1:月曜 2:火曜 ... 7:日曜
-      "core_time_1_period": 1-4, // 1:1限 2:2限 3:3限 4:4限
-      "core_time_2_day": 1-7,
-      "core_time_2_period": 1-4
+      "core_time_1_day": integer,    // 1:月曜 2:火曜 3:水曜 4:木曜 5:金曜 6:土曜 7:日曜
+      "core_time_1_period": integer, // 1:1限 2:2限 3:3限 4:4限
+      "core_time_2_day": integer,    // 1:月曜 2:火曜 3:水曜 4:木曜 5:金曜 6:土曜 7:日曜
+      "core_time_2_period": integer  // 1:1限 2:2限 3:3限 4:4限
     }
     ```
   - 出力: `{"status": "success", "message": "コアタイムを設定しました"}`
@@ -55,10 +55,10 @@
   - 出力: 
     ```json
     {
-      "core_time_1_day": 1-7,
-      "core_time_1_period": 1-4,
-      "core_time_2_day": 1-7,
-      "core_time_2_period": 1-4
+      "core_time_1_day": integer,    // 1:月曜 2:火曜 3:水曜 4:木曜 5:金曜 6:土曜 7:日曜
+      "core_time_1_period": integer, // 1:1限 2:2限 3:3限 4:4限
+      "core_time_2_day": integer,    // 1:月曜 2:火曜 3:水曜 4:木曜 5:金曜 6:土曜 7:日曜
+      "core_time_2_period": integer  // 1:1限 2:2限 3:3限 4:4限
     }
     ```
 
