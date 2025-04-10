@@ -84,7 +84,7 @@ SQLiteデータベースを使用し、以下のテーブルを管理します�
   - id (PK)
   - student_id (FK)
   - alert_date
-  - alert_type
+  - alert_period
 
 ## 開発環境
 - Python 3.8以上
