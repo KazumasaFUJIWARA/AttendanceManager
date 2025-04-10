@@ -1,9 +1,10 @@
 #/api/projects/{project_number}/{researcher_number}/allocations
 
 # {{{ import
-from fastapi import FastAPI, HTTPException, Path, File, UploadFile, Depends
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Path, File, UploadFile, Depends, Body
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 import os
@@ -16,12 +17,27 @@ import re
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
 from typing import List
-from models.models import Student, AttendanceLog, CurrentStatus, Alert
+from models.models import Student, AttendanceLog, CurrentStatus, Alert, CoretimeSettings
 from schemas.schemas import StudentCreate, Student as StudentSchema, AttendanceLogCreate, AttendanceLog as AttendanceLogSchema, CurrentStatusCreate, CurrentStatus as CurrentStatusSchema, AlertCreate, Alert as AlertSchema, AttendanceResponse
 from db.database import get_db
 # }}}
 
 app = FastAPI(title="Attendance Manager API")
+
+# CORSミドルウェアの設定
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=["*"],  # 本番環境では適切に制限してください
+	allow_credentials=True,
+	allow_methods=["*"],
+	allow_headers=["*"],
+)
+
+# 静的ファイルの設定（APIエンドポイントの後にマウント）
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    with open("../public/index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 #{{{ ロギングの設定
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -204,42 +220,121 @@ def record_attendance_now(
 #{{{ コアタイム管理API
 @app.get("/api/core-time/check/{period}")
 def check_core_time(period: int, db: Session = Depends(get_db)):
-	current_time = datetime.now()
-	current_day = current_time.weekday() + 1  # 1:月曜 2:火曜 ... 7:日曜
-	
-	# コアタイムの学生を取得
-	students = db.query(Student).filter(
-		((Student.core_time_1_day == current_day) & (Student.core_time_1_period == period)) |
-		((Student.core_time_2_day == current_day) & (Student.core_time_2_period == period))
-	).all()
+    try:
+        current_time = datetime.now()
+        current_day = current_time.weekday() + 1  # 1:月曜 2:火曜 ... 7:日曜
+        
+        # コアタイムの学生を取得
+        students = db.query(Student).filter(
+            ((Student.core_time_1_day == current_day) & (Student.core_time_1_period == period)) |
+            ((Student.core_time_2_day == current_day) & (Student.core_time_2_period == period))
+        ).all()
 
-	violations = []
-	for student in students:
-		# 入室状況を確認
-		current_status = db.query(CurrentStatus).filter(
-			CurrentStatus.student_id == student.student_id
-		).first()
-		
-		if not current_status:
-			# コアタイム違反
-			violations.append(student.student_id)
-			# 違反回数を更新
-			student.core_time_violations += 1
-			# アラートを記録
-			alert = Alert(
-				student_id=student.student_id,
-				alert_date=current_time.date(),
-				alert_type="core_time_violation"
-			)
-			db.add(alert)
+        violations = []
+        for student in students:
+            # 入室状況を確認
+            current_status = db.query(CurrentStatus).filter(
+                CurrentStatus.student_id == student.student_id
+            ).first()
+            
+            if not current_status:
+                # コアタイム違反
+                violations.append(student.student_id)
 
-	db.commit()
-	return {"violations": violations}
+                # 同じ日の同じ時限の違反が既に記録されているか確認
+                existing_alert = db.query(Alert).filter(
+                    Alert.student_id == student.student_id,
+                    Alert.alert_date == current_time.date(),
+                    Alert.alert_period == period
+                ).first()
+
+                # 重複がない場合のみアラートを記録
+                if not existing_alert:
+                    alert = Alert(
+                        student_id=student.student_id,
+                        alert_date=current_time.date(),
+                        alert_period=period
+                    )
+                    db.add(alert)
+
+        # 各学生の違反回数を更新
+        for student in students:
+            # Alertテーブルから違反回数を集計
+            violation_count = db.query(Alert).filter(
+                Alert.student_id == student.student_id
+            ).count()
+            
+            # 学生の違反回数を更新
+            student.core_time_violations = violation_count
+
+        db.commit()
+        return {"violations": violations}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/core-time/violations", response_model=List[AlertSchema])
 def read_core_time_violations(db: Session = Depends(get_db)):
-	alerts = db.query(Alert).filter(
-		Alert.alert_type == "core_time_violation"
-	).all()
-	return alerts
+    try:
+        alerts = db.query(Alert).all()
+        return alerts
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 #}}}
+
+#{{{ コアタイム設定API
+@app.post("/api/coretime/{student_id}")
+async def set_coretime(
+    student_id: str,
+    coretime: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    学生のコアタイムを設定するAPI
+    """
+    try:
+        # 学生の存在確認
+        student = db.query(Student).filter(Student.student_id == student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        # コアタイムの設定を更新
+        student.core_time_1_day = coretime.get("core_time_1_day")
+        student.core_time_1_period = coretime.get("core_time_1_period")
+        student.core_time_2_day = coretime.get("core_time_2_day")
+        student.core_time_2_period = coretime.get("core_time_2_period")
+        
+        db.commit()
+        
+        return {"status": "success", "message": "コアタイムを設定しました"}
+    except Exception as e:
+        logger.error(f"コアタイム設定エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/coretime/{student_id}")
+async def get_coretime(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    学生のコアタイム設定を取得するAPI
+    """
+    try:
+        student = db.query(Student).filter(Student.student_id == student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        return {
+            "core_time_1_day": student.core_time_1_day,
+            "core_time_1_period": student.core_time_1_period,
+            "core_time_2_day": student.core_time_2_day,
+            "core_time_2_period": student.core_time_2_period
+        }
+    except Exception as e:
+        logger.error(f"コアタイム取得エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+#}}}
+
+# 静的ファイルの設定（最後にマウント）
+app.mount("/js", StaticFiles(directory="../public/js"), name="js")
+app.mount("/", StaticFiles(directory="../public", html=True), name="static")

@@ -4,9 +4,9 @@ FROM python:3.9-slim
 # 作業ディレクトリを /app に設定
 WORKDIR /app
 
-# backend と public ディレクトリのみをコピー
-COPY ./backend/ ./backend/
-COPY ./public/ ./public/
+# backend と public ディレクトリをコピー
+COPY ./backend /app/backend
+COPY ./public /app/public
 
 # Python の依存パッケージをインストール
 # (backend/requirements.txt を使用)
