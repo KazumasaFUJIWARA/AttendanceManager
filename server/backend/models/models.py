@@ -45,8 +45,8 @@ class Alert(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     student_id = Column(String, ForeignKey("students.student_id"))
-    alert_date = Column(Date)
-    alert_type = Column(String)
+    alert_date = Column(Date, nullable=False)
+    alert_period = Column(Integer, nullable=False)
 
     # リレーションシップ
     student = relationship("Student", back_populates="alerts")

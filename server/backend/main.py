@@ -220,44 +220,49 @@ def record_attendance_now(
 #{{{ コアタイム管理API
 @app.get("/api/core-time/check/{period}")
 def check_core_time(period: int, db: Session = Depends(get_db)):
-	current_time = datetime.now()
-	current_day = current_time.weekday() + 1  # 1:月曜 2:火曜 ... 7:日曜
-	
-	# コアタイムの学生を取得
-	students = db.query(Student).filter(
-		((Student.core_time_1_day == current_day) & (Student.core_time_1_period == period)) |
-		((Student.core_time_2_day == current_day) & (Student.core_time_2_period == period))
-	).all()
+    try:
+        current_time = datetime.now()
+        current_day = current_time.weekday() + 1  # 1:月曜 2:火曜 ... 7:日曜
+        
+        # コアタイムの学生を取得
+        students = db.query(Student).filter(
+            ((Student.core_time_1_day == current_day) & (Student.core_time_1_period == period)) |
+            ((Student.core_time_2_day == current_day) & (Student.core_time_2_period == period))
+        ).all()
 
-	violations = []
-	for student in students:
-		# 入室状況を確認
-		current_status = db.query(CurrentStatus).filter(
-			CurrentStatus.student_id == student.student_id
-		).first()
-		
-		if not current_status:
-			# コアタイム違反
-			violations.append(student.student_id)
-			# 違反回数を更新
-			student.core_time_violations += 1
-			# アラートを記録
-			alert = Alert(
-				student_id=student.student_id,
-				alert_date=current_time.date(),
-				alert_type="core_time_violation"
-			)
-			db.add(alert)
+        violations = []
+        for student in students:
+            # 入室状況を確認
+            current_status = db.query(CurrentStatus).filter(
+                CurrentStatus.student_id == student.student_id
+            ).first()
+            
+            if not current_status:
+                # コアタイム違反
+                violations.append(student.student_id)
+                # 違反回数を更新
+                student.core_time_violations += 1
+                # アラートを記録
+                alert = Alert(
+                    student_id=student.student_id,
+                    alert_date=current_time.date(),
+                    alert_period=period
+                )
+                db.add(alert)
 
-	db.commit()
-	return {"violations": violations}
+        db.commit()
+        return {"violations": violations}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/core-time/violations", response_model=List[AlertSchema])
 def read_core_time_violations(db: Session = Depends(get_db)):
-	alerts = db.query(Alert).filter(
-		Alert.alert_type == "core_time_violation"
-	).all()
-	return alerts
+    try:
+        alerts = db.query(Alert).all()
+        return alerts
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 #}}}
 
 #{{{ コアタイム設定API
