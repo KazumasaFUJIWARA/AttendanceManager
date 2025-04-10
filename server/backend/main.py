@@ -1,7 +1,7 @@
 #/api/projects/{project_number}/{researcher_number}/allocations
 
 # {{{ import
-from fastapi import FastAPI, HTTPException, Path, File, UploadFile, Depends
+from fastapi import FastAPI, HTTPException, Path, File, UploadFile, Depends, Body
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +17,7 @@ import re
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
 from typing import List
-from models.models import Student, AttendanceLog, CurrentStatus, Alert
+from models.models import Student, AttendanceLog, CurrentStatus, Alert, CoretimeSettings
 from schemas.schemas import StudentCreate, Student as StudentSchema, AttendanceLogCreate, AttendanceLog as AttendanceLogSchema, CurrentStatusCreate, CurrentStatus as CurrentStatusSchema, AlertCreate, Alert as AlertSchema, AttendanceResponse
 from db.database import get_db
 # }}}
@@ -258,6 +258,59 @@ def read_core_time_violations(db: Session = Depends(get_db)):
 		Alert.alert_type == "core_time_violation"
 	).all()
 	return alerts
+#}}}
+
+#{{{ コアタイム設定API
+@app.post("/api/coretime/{student_id}")
+async def set_coretime(
+    student_id: str,
+    coretime: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    学生のコアタイムを設定するAPI
+    """
+    try:
+        # 学生の存在確認
+        student = db.query(Student).filter(Student.student_id == student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        # コアタイムの設定を更新
+        student.core_time_1_day = coretime.get("core_time_1_day")
+        student.core_time_1_period = coretime.get("core_time_1_period")
+        student.core_time_2_day = coretime.get("core_time_2_day")
+        student.core_time_2_period = coretime.get("core_time_2_period")
+        
+        db.commit()
+        
+        return {"status": "success", "message": "コアタイムを設定しました"}
+    except Exception as e:
+        logger.error(f"コアタイム設定エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/coretime/{student_id}")
+async def get_coretime(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    学生のコアタイム設定を取得するAPI
+    """
+    try:
+        student = db.query(Student).filter(Student.student_id == student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        return {
+            "core_time_1_day": student.core_time_1_day,
+            "core_time_1_period": student.core_time_1_period,
+            "core_time_2_day": student.core_time_2_day,
+            "core_time_2_period": student.core_time_2_period
+        }
+    except Exception as e:
+        logger.error(f"コアタイム取得エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 #}}}
 
 # 静的ファイルの設定（最後にマウント）
