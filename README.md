@@ -1,65 +1,116 @@
 # 出席管理システム
 
 ## 概要
-このプロジェクトは、学生の出席状況を管理するためのWebアプリケーションです。リアルタイムでの出席記録、コアタイム管理、アラート機能を提供します。
+このシステムは、学生の出席状況を管理し、コアタイムの遵守状況を監視するためのWebアプリケーションです。
 
-## 主な機能
-- 学生の出席記録（入室・退室）
-- コアタイム管理（8:30-17:30）
-- リアルタイムの出席状況表示
-- アラート機能（コアタイム違反、長時間滞在）
-- 出席履歴の確認
-- 学生情報の管理
+## 機能
+- 学生の入退室管理
+- コアタイム設定と監視
+- 出席履歴の記録と表示
+- コアタイム違反の検出と通知
 
-## 技術スタック
-- バックエンド: FastAPI (Python)
-- フロントエンド: HTML, CSS, JavaScript
-- データベース: SQLite
-- コンテナ化: Docker
+## APIエンドポイント
 
-## セットアップ手順
-
-### 1. リポジトリのクローン
-```bash
-git clone https://github.com/KazumasaFUJIWARA/AttendanceManager.git
-cd AttendanceManager
-```
-
-### 2. 環境変数の設定
-`.env`ファイルを作成し、以下の内容を設定します：
-```
-DATABASE_URL=sqlite:///./attendance.db
-```
-
-### 3. Docker環境の構築
-```bash
-docker-compose up -d
-```
-
-### 4. アプリケーションの起動
-サーバーが自動的に起動し、以下のURLでアクセス可能になります：
-- API: http://localhost:8889
-- Swagger UI: http://localhost:8889/docs
-- フロントエンド: http://localhost:8889/index.html
-
-## API エンドポイント
-
-### 学生管理
-- `POST /api/students/` - 学生の登録
-- `GET /api/students/{student_id}` - 学生情報の取得
+### 学生管理API
+- `POST /api/students/` - 新規学生の登録
+  - 入力: `{"student_id": "string", "name": "string"}`
+  - 出力: 登録された学生情報（ID、名前）
 - `GET /api/students/` - 全学生の一覧取得
+  - 出力: 学生情報の配列 `[{"student_id": "string", "name": "string", ...}]`
+- `GET /api/students/{student_id}` - 特定の学生の情報取得
+  - 出力: 学生情報 `{"student_id": "string", "name": "string", ...}`
 
-### 出席管理
-- `POST /api/attendance/` - 出席記録の作成
-- `GET /api/attendance/{student_id}` - 学生の出席履歴取得
-- `GET /api/attendance/current/{student_id}` - 現在の出席状況取得
+### 入退室管理API
+- `POST /api/attendance/` - 入退室記録の登録
+  - 入力: `{"student_id": "string", "time": "datetime"}`
+  - 出力: `{"name": "string", "status": "入室" | "退室"}`
+- `GET /api/attendance/{student_id}` - 特定の学生の出席履歴取得
+  - クエリパラメータ: `days` (オプション) - 過去何日分の履歴を取得するか
+  - 出力: 出席記録の配列 `[{"student_id": "string", "entry_time": "datetime", "exit_time": "datetime"}]`
+- `GET /api/current-status/` - 現在の入室状況一覧取得
+  - 出力: 入室状況の配列 `[{"student_id": "string", "entry_time": "datetime"}]`
+- `POST /api/attendance-now/{student_id}` - 現在時刻での入退室記録
+  - 出力: `{"name": "string", "status": "入室" | "退室"}`
 
-### コアタイム管理
-- `GET /api/core-time/` - コアタイム情報の取得
-- `GET /api/core-time/violations/` - コアタイム違反の一覧取得
+### コアタイム管理API
+- `GET /api/core-time/check/{period}` - 特定の時限のコアタイム遵守状況チェック
+  - パラメータ: `period` (1-4) - チェックする時限
+  - 出力: `{"violations": ["student_id1", "student_id2", ...]}`
+- `GET /api/core-time/violations` - コアタイム違反履歴の取得
+  - 出力: アラートの配列 `[{"student_id": "string", "alert_date": "date", "alert_type": "string"}]`
 
-### アラート
-- `GET /api/alerts/` - アラート一覧の取得
+### コアタイム設定API
+- `POST /api/coretime/{student_id}` - 学生のコアタイム設定
+  - 入力: 
+    ```json
+    {
+      "core_time_1_day": 1-7,    // 1:月曜 2:火曜 ... 7:日曜
+      "core_time_1_period": 1-4, // 1:1限 2:2限 3:3限 4:4限
+      "core_time_2_day": 1-7,
+      "core_time_2_period": 1-4
+    }
+    ```
+  - 出力: `{"status": "success", "message": "コアタイムを設定しました"}`
+- `GET /api/coretime/{student_id}` - 学生のコアタイム設定取得
+  - 出力: 
+    ```json
+    {
+      "core_time_1_day": 1-7,
+      "core_time_1_period": 1-4,
+      "core_time_2_day": 1-7,
+      "core_time_2_period": 1-4
+    }
+    ```
+
+## データベース
+SQLiteデータベースを使用し、以下のテーブルを管理します：
+- Student（学生情報）
+  - student_id (PK)
+  - name
+  - core_time_1_day
+  - core_time_1_period
+  - core_time_2_day
+  - core_time_2_period
+  - core_time_violations
+- AttendanceLog（出席記録）
+  - id (PK)
+  - student_id (FK)
+  - entry_time
+  - exit_time
+- CurrentStatus（現在の入室状況）
+  - student_id (PK)
+  - entry_time
+- Alert（コアタイム違反等のアラート）
+  - id (PK)
+  - student_id (FK)
+  - alert_date
+  - alert_type
+
+## 開発環境
+- Python 3.8以上
+- FastAPI
+- SQLAlchemy
+- SQLite
+
+## セットアップ
+1. 必要なパッケージのインストール
+```bash
+pip install -r requirements.txt
+```
+
+2. データベースの初期化
+```bash
+python init_db.py
+```
+
+3. サーバーの起動
+```bash
+uvicorn main:app --reload
+```
+
+## 注意事項
+- 本番環境では適切なセキュリティ設定が必要です
+- CORSの設定は開発環境用の設定となっています
 
 ## フロントエンド機能
 - リアルタイムの出席状況表示
