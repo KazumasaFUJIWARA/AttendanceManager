@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import sqlite3
 import os
 
@@ -44,7 +45,7 @@ CREATE TABLE alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id TEXT,
     alert_date DATE,
-    alert_type TEXT,
+    alert_period INTEGER,
     FOREIGN KEY (student_id) REFERENCES students(student_id)
 )
 ''')

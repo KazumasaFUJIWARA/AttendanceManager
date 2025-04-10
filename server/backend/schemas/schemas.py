@@ -53,7 +53,7 @@ class CurrentStatus(CurrentStatusBase):
 class AlertBase(BaseModel):
     student_id: str
     alert_date: date
-    alert_type: str
+    alert_period: int
 
 class AlertCreate(AlertBase):
     pass
@@ -62,4 +62,4 @@ class Alert(AlertBase):
     id: int
 
     class Config:
-        from_attributes = True 
+        orm_mode = True 
