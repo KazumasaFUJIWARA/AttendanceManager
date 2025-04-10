@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import sqlite3
 import os
 
@@ -14,13 +15,13 @@ tables = cursor.fetchall()
 
 print("=== テーブル一覧 ===")
 for table in tables:
-    print(f"\nテーブル名: {table[0]}")
+    print("\nテーブル名: {}".format(table[0]))
     # テーブルの構造を取得
-    cursor.execute(f"PRAGMA table_info({table[0]})")
+    cursor.execute("PRAGMA table_info({})".format(table[0]))
     columns = cursor.fetchall()
     print("カラム構造:")
     for col in columns:
-        print(f"  - {col[1]} ({col[2]})")
+        print("  - {} ({})".format(col[1], col[2]))
 
 # 接続を閉じる
 conn.close() 
