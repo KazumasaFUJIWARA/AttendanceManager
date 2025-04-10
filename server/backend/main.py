@@ -240,8 +240,6 @@ def check_core_time(period: int, db: Session = Depends(get_db)):
             if not current_status:
                 # コアタイム違反
                 violations.append(student.student_id)
-                # 違反回数を更新
-                student.core_time_violations += 1
 
                 # 同じ日の同じ時限の違反が既に記録されているか確認
                 existing_alert = db.query(Alert).filter(
@@ -258,6 +256,16 @@ def check_core_time(period: int, db: Session = Depends(get_db)):
                         alert_period=period
                     )
                     db.add(alert)
+
+        # 各学生の違反回数を更新
+        for student in students:
+            # Alertテーブルから違反回数を集計
+            violation_count = db.query(Alert).filter(
+                Alert.student_id == student.student_id
+            ).count()
+            
+            # 学生の違反回数を更新
+            student.core_time_violations = violation_count
 
         db.commit()
         return {"violations": violations}
