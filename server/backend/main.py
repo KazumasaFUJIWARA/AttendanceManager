@@ -18,7 +18,7 @@ import re
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
 from typing import List, Optional
-from models.models import Student, AttendanceLog, CurrentStatus, Alert, CoretimeSettings
+from models.models import Student, AttendanceLog, CurrentStatus, Alert
 from schemas.schemas import StudentCreate, Student as StudentSchema, AttendanceLogCreate, AttendanceLog as AttendanceLogSchema, CurrentStatusCreate, CurrentStatus as CurrentStatusSchema, AlertCreate, Alert as AlertSchema, AttendanceResponse
 from db.database import get_db
 # }}}
@@ -88,6 +88,53 @@ def read_student(student_id: str, db: Session = Depends(get_db)):
 	if student is None:
 		raise HTTPException(status_code=404, detail="Student not found")
 	return student
+
+@app.delete("/api/students/{student_id}")
+async def delete_student(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    指定された学籍番号の学生のレコードを削除するAPI
+    関連する出席記録、現在の入室状況、コアタイム違反の記録も削除します
+    """
+    try:
+        # トランザクション開始
+        student = db.query(Student).filter(Student.student_id == student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        # 関連する出席記録を削除
+        db.query(AttendanceLog).filter(
+            AttendanceLog.student_id == student_id
+        ).delete()
+
+        # 現在の入室状況を削除
+        db.query(CurrentStatus).filter(
+            CurrentStatus.student_id == student_id
+        ).delete()
+
+        # コアタイム違反の記録を削除
+        db.query(Alert).filter(
+            Alert.student_id == student_id
+        ).delete()
+
+        # 学生レコードを削除
+        db.delete(student)
+
+        # 変更をコミット
+        db.commit()
+
+        # Telegram通知を送信
+        message = f"🗑️ {student.name}さん（学籍番号：{student_id}）のレコードを削除しました。"
+        await send_telegram_message(message)
+
+        return {"status": "success", "message": f"学生ID {student_id} のレコードを削除しました"}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"学生削除エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 #}}}
 
 #{{{ 入退室管理API
