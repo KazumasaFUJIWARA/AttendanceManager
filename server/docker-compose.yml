@@ -9,3 +9,6 @@ services:
     volumes:
       - ./backend:/app/backend
       - ./public:/app/public
+    environment:
+      - TELEGRAM_ID=${TELEGRAM_ID}
+      - TELEGRAM_ALERT=${TELEGRAM_ALERT}
