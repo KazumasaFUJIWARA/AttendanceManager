@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings
 import sqlite3
 import os
 import logging
@@ -16,7 +17,7 @@ import json
 import re
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
-from typing import List
+from typing import List, Optional
 from models.models import Student, AttendanceLog, CurrentStatus, Alert, CoretimeSettings
 from schemas.schemas import StudentCreate, Student as StudentSchema, AttendanceLogCreate, AttendanceLog as AttendanceLogSchema, CurrentStatusCreate, CurrentStatus as CurrentStatusSchema, AlertCreate, Alert as AlertSchema, AttendanceResponse
 from db.database import get_db
@@ -162,7 +163,7 @@ def read_current_status(db: Session = Depends(get_db)):
 	return current_status
 
 @app.post("/api/attendance-now/{student_id}", response_model=AttendanceResponse)
-def record_attendance_now(
+async def record_attendance_now(
 	student_id: str,
 	db: Session = Depends(get_db)
 ):
@@ -199,6 +200,11 @@ def record_attendance_now(
 		db.add(attendance_log)
 		
 		db.commit()
+
+		# Telegram通知を送信
+		message = f"🟢 {student.name}さんが入室しました。\n時刻: {current_time.strftime('%Y-%m-%d %H:%M:%S')}"
+		await send_telegram_message(message)
+		
 		return AttendanceResponse(name=student.name, status="入室")
 	else:
 		# 退室処理
@@ -214,6 +220,11 @@ def record_attendance_now(
 		# 現在の入室状況を削除
 		db.delete(current_status)
 		db.commit()
+
+		# Telegram通知を送信
+		message = f"🔴 {student.name}さんが退室しました。\n時刻: {current_time.strftime('%Y-%m-%d %H:%M:%S')}"
+		await send_telegram_message(message)
+		
 		return AttendanceResponse(name=student.name, status="退室")
 #}}}
 
@@ -338,3 +349,33 @@ async def get_coretime(
 # 静的ファイルの設定（最後にマウント）
 app.mount("/js", StaticFiles(directory="../public/js"), name="js")
 app.mount("/", StaticFiles(directory="../public", html=True), name="static")
+
+# Telegram設定
+class Settings(BaseSettings):
+    telegram_id: str
+    telegram_alert: str
+
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+
+async def send_telegram_message(message: str) -> bool:
+    """
+    Telegramにメッセージを送信する関数
+    """
+    try:
+        url = f"https://api.telegram.org/bot{settings.telegram_alert}/sendMessage"
+        data = {
+            "chat_id": settings.telegram_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        logging.info(f"Telegram送信試行: URL={url}, データ={data}")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=data)
+            logging.info(f"Telegram送信レスポンス: {response.status_code} - {response.text}")
+            return response.status_code == 200
+    except Exception as e:
+        logging.error(f"Telegram送信エラー: {str(e)}")
+        return False
