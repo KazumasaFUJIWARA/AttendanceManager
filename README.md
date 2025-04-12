@@ -37,6 +37,7 @@
 - `GET /api/core-time/check/{period}` - 特定の時限のコアタイム遵守状況チェック
   - パラメータ: `period` (1-4) - チェックする時限
   - 出力: `{"violations": ["student_id1", "student_id2", ...]}`
+  - 機能: コアタイム違反を検出すると、Telegramに自動通知を送信します
 - `GET /api/core-time/violations` - コアタイム違反履歴の取得
   - 出力: アラートの配列 `[{"student_id": "string", "alert_date": "date", "alert_type": "string"}]`
 
