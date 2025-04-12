@@ -8,6 +8,7 @@
 - コアタイム設定と監視
 - 出席履歴の記録と表示
 - コアタイム違反の検出と通知
+- Telegram通知機能（入退室時の自動通知）
 
 ## APIエンドポイント
 
@@ -98,12 +99,19 @@ SQLiteデータベースを使用し、以下のテーブルを管理します�
 pip install -r requirements.txt
 ```
 
-2. データベースの初期化
+2. 環境変数の設定
+`.env`ファイルを作成し、以下の内容を設定してください：
+```
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
+```
+
+3. データベースの初期化
 ```bash
 python init_db.py
 ```
 
-3. サーバーの起動
+4. サーバーの起動
 ```bash
 uvicorn main:app --reload
 ```
@@ -111,6 +119,7 @@ uvicorn main:app --reload
 ## 注意事項
 - 本番環境では適切なセキュリティ設定が必要です
 - CORSの設定は開発環境用の設定となっています
+- Telegram通知機能を使用する場合は、有効なボットトークンとチャットIDの設定が必要です
 
 ## フロントエンド機能
 - リアルタイムの出席状況表示
