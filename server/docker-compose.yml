@@ -9,6 +9,8 @@ services:
     volumes:
       - ./backend:/app/backend
       - ./public:/app/public
+      - ./logs:/var/log/attendance
     environment:
       - TELEGRAM_ID=${TELEGRAM_ID}
       - TELEGRAM_ALERT=${TELEGRAM_ALERT}
+      - TZ=Asia/Tokyo
