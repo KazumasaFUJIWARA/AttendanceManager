@@ -1,0 +1,8 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# 毎分実行するタスク
+* * * * * date >> /var/log/cron.log 2>&1
+
+# ログファイルを空にする（毎日午前0時に実行）
+0 0 * * * echo "" > /var/log/cron.log 
