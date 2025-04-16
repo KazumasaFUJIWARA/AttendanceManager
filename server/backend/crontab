@@ -5,4 +5,12 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 * * * * * date >> /var/log/cron.log 2>&1
 
 # ログファイルを空にする（毎日午前0時に実行）
-0 0 * * * echo "" > /var/log/cron.log 
+0 0 * * * echo "" > /var/log/cron.log
+
+# コアタイムチェック（月曜から金曜）
+0 9 * * * 1-5 curl -X GET http://localhost:8000/api/core-time/check/1 >> /var/log/cron.log 2>&1
+0 11 * * * 1-5 curl -X GET http://localhost:8000/api/core-time/check/2 >> /var/log/cron.log 2>&1
+30 13 * * * 1-5 curl -X GET http://localhost:8000/api/core-time/check/3 >> /var/log/cron.log 2>&1
+15 15 * * * 1-5 curl -X GET http://localhost:8000/api/core-time/check/4 >> /var/log/cron.log 2>&1
+0 16 * * * 1-5 curl -X GET http://localhost:8000/api/core-time/check/5 >> /var/log/cron.log 2>&1 
+
