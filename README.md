@@ -40,10 +40,24 @@
 ### コアタイム管理API
 - `GET /api/core-time/check/{period}` - 特定の時限のコアタイム遵守状況チェック
   - パラメータ: `period` (1-4) - チェックする時限
-  - 出力: `{"violations": ["student_id1", "student_id2", ...]}`
-  - 機能: コアタイム違反を検出すると、Telegramに自動通知を送信します
+  - 出力: 
+    ```json
+    {
+      "violations": ["student_id1", "student_id2", ...],
+      "updated_students": [
+        {
+          "student_id": "string",
+          "core_time_violations": integer
+        }
+      ]
+    }
+    ```
+  - 機能: 
+    - コアタイム違反を検出すると、Telegramに自動通知を送信
+    - 違反が見つかった場合、Alertテーブルに記録
+    - 学生の違反回数（core_time_violations）を更新
 - `GET /api/core-time/violations` - コアタイム違反履歴の取得
-  - 出力: アラートの配列 `[{"student_id": "string", "alert_date": "date", "alert_type": "string"}]`
+  - 出力: アラートの配列 `[{"student_id": "string", "alert_date": "date", "alert_period": integer, "id": integer}]`
 
 ### コアタイム設定API
 - `POST /api/coretime/{student_id}` - 学生のコアタイム設定
@@ -107,7 +121,7 @@ SQLiteデータベースを使用し、以下のテーブルを管理します�
 | 2限  | 11:00    | 2           |
 | 3限  | 13:30    | 3           |
 | 4限  | 15:15    | 4           |
-| 5限  | 16:00    | 5           |
+| 5限  | 17:00    | 5           |
 
 ### セットアップ方法
 1. `server/opt`ディレクトリ内のスクリプトをサーバーにコピー
@@ -122,35 +136,59 @@ SQLiteデータベースを使用し、以下のテーブルを管理します�
 - スクリプトのインストールと実行権限の設定
 - cronの設定
 
-ログは `/opt/AttendanceManager/logs/coretime.log` に記録されます。
+### cronの設定
+```bash
+# コアタイムチェック（平日のみ実行）
+15 9 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 1 >> /opt/AttendanceManager/logs/coretime.log 2>&1
+0 11 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 2 >> /opt/AttendanceManager/logs/coretime.log 2>&1
+30 13 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 3 >> /opt/AttendanceManager/logs/coretime.log 2>&1
+15 15 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 4 >> /opt/AttendanceManager/logs/coretime.log 2>&1
+0 17 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 5 >> /opt/AttendanceManager/logs/coretime.log 2>&1
+```
+
+### ログ管理
+システムは以下のログファイルを生成・管理します：
+
+1. **コアタイムチェックログ** (`/var/log/cron.log`)
+   - 各時限のコアタイムチェック実行結果
+   - 違反検出時の詳細情報
+   - エラー発生時のスタックトレース
+
+2. **ログローテーション**
+   - ログファイルは毎月1日の0時にローテーション
+   - 前月のログは `/var/log/cron_yyyymm.log` に保存（yyyymmは年月）
+   - ローテーション後、`cron.log` は空になる
+
+3. **ログフォーマット**
+   ```
+   [YYYY-MM-DD HH:MM:SS] [INFO/ERROR] メッセージ
+   ```
+   - タイムスタンプ: ログ生成時刻
+   - ログレベル: INFO（通常の実行ログ）、ERROR（エラー発生時）
+   - メッセージ: 実行結果やエラー内容の詳細
+
+4. **ログ監視**
+   - システム管理者は定期的にログを確認
+   - エラー発生時は即座に通知
+   - ログの分析によるシステム改善の実施
 
 ## セットアップ
-1. 必要なパッケージのインストール
+1. Dockerコンテナの起動
 ```bash
-pip install -r requirements.txt
+docker-compose up -d
 ```
 
-2. 環境変数の設定
-`.env`ファイルを作成し、以下の内容を設定してください：
-```
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_telegram_chat_id
-```
-
-3. データベースの初期化
+2. データベースの初期化
 ```bash
-python init_db.py
-```
-
-4. サーバーの起動
-```bash
-uvicorn main:app --reload
+docker-compose exec app python -c "from db.database import Base, engine; from models.models import Student, AttendanceLog, CurrentStatus, Alert; Base.metadata.create_all(bind=engine)"
 ```
 
 ## 注意事項
 - 本番環境では適切なセキュリティ設定が必要です
 - CORSの設定は開発環境用の設定となっています
-- Telegram通知機能を使用する場合は、有効なボットトークンとチャットIDの設定が必要です
+- Telegram通知機能を使用する場合は、システムの環境変数に以下の設定が必要です：
+  - `TELEGRAM_BOT_TOKEN`: Telegramボットのトークン
+  - `TELEGRAM_CHAT_ID`: 通知を送信するチャットID
 
 ## フロントエンド機能
 - リアルタイムの出席状況表示
