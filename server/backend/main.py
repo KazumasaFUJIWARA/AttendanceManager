@@ -315,6 +315,7 @@ async def check_core_time(period: int, db: Session = Depends(get_db)):
                         alert_period=period
                     )
                     db.add(alert)
+                    db.commit()
 
                     # Telegram通知を送信
                     message = (
@@ -325,28 +326,20 @@ async def check_core_time(period: int, db: Session = Depends(get_db)):
                     )
                     await send_telegram_message(message)
 
-        # 各学生の違反回数を更新
-        for student in students:
-            # Alertテーブルから違反回数を集計（重複を除外）
+            # 違反回数を更新 （試験的に全学生に対して実行)
+            # student.core_time_violations を Alertのstudent_idでカウント
             violation_count = db.query(Alert).filter(
                 Alert.student_id == student.student_id
-            ).distinct().count()
-            
-            # 学生の違反回数を更新
+            ).count()
             student.core_time_violations = violation_count
-            db.add(student)  # 明示的にStudentオブジェクトをセッションに追加
+            db.add(student)
+            db.commit()
 
-        # 変更をコミット
-        db.commit()
-        
+
         # 更新後の学生データを取得して返す
         updated_students = db.query(Student).filter(
             Student.student_id.in_([s.student_id for s in students])
         ).all()
-        
-        # 違反回数の更新を確認
-        for student in updated_students:
-            logging.info(f"学生 {student.student_id} の違反回数: {student.core_time_violations}")
         
         return {
             "violations": violations,
