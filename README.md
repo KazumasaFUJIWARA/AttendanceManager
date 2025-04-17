@@ -190,8 +190,8 @@ docker-compose exec app python -c "from db.database import Base, engine; from mo
 - コンテナ設定:
   - ホスト名: attend_app
   - 環境変数: 
-    - `TELEGRAM_BOT_TOKEN`: Telegramボットのトークン
-    - `TELEGRAM_CHAT_ID`: 通知を送信するチャットID
+    - `TELEGRAM_ID`: TelegramボットのID
+    - `TELEGRAM_ALERT`: 通知を送信するチャットID
   - ボリュームマウント:
     - ログ: `/var/log/cron.log`
     - データベース: `/app/db/attendance.db`
@@ -200,8 +200,8 @@ docker-compose exec app python -c "from db.database import Base, engine; from mo
 - 本番環境では適切なセキュリティ設定が必要です
 - CORSの設定は開発環境用の設定となっています
 - Telegram通知機能を使用する場合は、システムの環境変数に以下の設定が必要です：
-  - `TELEGRAM_BOT_TOKEN`: Telegramボットのトークン
-  - `TELEGRAM_CHAT_ID`: 通知を送信するチャットID
+  - `TELEGRAM_ID`: TelegramボットのID
+  - `TELEGRAM_ALERT`: 通知を送信するチャットID
 
 ## フロントエンド機能
 - リアルタイムの出席状況表示
