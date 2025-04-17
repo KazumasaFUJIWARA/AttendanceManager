@@ -7,6 +7,7 @@ WORKDIR /app
 # backend と public ディレクトリをコピー
 COPY backend /app/backend
 COPY public /app/public
+COPY opt/check_coretime.sh /app/check_coretime.sh
 
 # cronのインストール
 RUN apt-get update && \
@@ -28,6 +29,7 @@ RUN touch /var/log/cron.log
 # 起動スクリプトをコピーして実行権限を付与
 COPY backend/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
+RUN chmod +x /app/check_coretime.sh
 
 # コンテナ外部に公開するポート番号（FastAPI アプリ用）
 EXPOSE 8000

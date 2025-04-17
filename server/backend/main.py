@@ -1,5 +1,6 @@
 #/api/projects/{project_number}/{researcher_number}/allocations
 
+
 # {{{ import
 from fastapi import FastAPI, HTTPException, Path, File, UploadFile, Depends, Body
 from fastapi.responses import FileResponse, HTMLResponse
@@ -19,7 +20,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
 from typing import List, Optional
 from models.models import Student, AttendanceLog, CurrentStatus, Alert
-from schemas.schemas import StudentCreate, Student as StudentSchema, AttendanceLogCreate, AttendanceLog as AttendanceLogSchema, CurrentStatusCreate, CurrentStatus as CurrentStatusSchema, AlertCreate, Alert as AlertSchema, AttendanceResponse
+from schemas.schemas import StudentCreate, Student as StudentSchema, AttendanceLogCreate, AttendanceLog as AttendanceLogSchema, CurrentStatusCreate, CurrentStatus as CurrentStatusSchema, AlertCreate, Alert as AlertSchema, AttendanceResponse, CoreTimeUpdate
 from db.database import get_db
 # }}}
 
@@ -277,7 +278,7 @@ async def record_attendance_now(
 
 #{{{ コアタイム管理API
 @app.get("/api/core-time/check/{period}")
-def check_core_time(period: int, db: Session = Depends(get_db)):
+async def check_core_time(period: int, db: Session = Depends(get_db)):
     try:
         current_time = datetime.now()
         current_day = current_time.weekday() + 1  # 1:月曜 2:火曜 ... 7:日曜
@@ -315,18 +316,47 @@ def check_core_time(period: int, db: Session = Depends(get_db)):
                     )
                     db.add(alert)
 
+                    # Telegram通知を送信
+                    message = (
+                        f"⚠️ コアタイム違反の通知\n\n"
+                        f"学籍番号: {student.student_id}\n"
+                        f"氏名: {student.name}\n"
+                        f"違反日時: {current_time.strftime('%Y-%m-%d')} {period}限目"
+                    )
+                    await send_telegram_message(message)
+
         # 各学生の違反回数を更新
         for student in students:
-            # Alertテーブルから違反回数を集計
+            # Alertテーブルから違反回数を集計（重複を除外）
             violation_count = db.query(Alert).filter(
                 Alert.student_id == student.student_id
-            ).count()
+            ).distinct().count()
             
             # 学生の違反回数を更新
             student.core_time_violations = violation_count
+            db.add(student)  # 明示的にStudentオブジェクトをセッションに追加
 
+        # 変更をコミット
         db.commit()
-        return {"violations": violations}
+        
+        # 更新後の学生データを取得して返す
+        updated_students = db.query(Student).filter(
+            Student.student_id.in_([s.student_id for s in students])
+        ).all()
+        
+        # 違反回数の更新を確認
+        for student in updated_students:
+            logging.info(f"学生 {student.student_id} の違反回数: {student.core_time_violations}")
+        
+        return {
+            "violations": violations,
+            "updated_students": [
+                {
+                    "student_id": s.student_id,
+                    "core_time_violations": s.core_time_violations
+                } for s in updated_students
+            ]
+        }
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -344,29 +374,23 @@ def read_core_time_violations(db: Session = Depends(get_db)):
 @app.post("/api/coretime/{student_id}")
 async def set_coretime(
     student_id: str,
-    coretime: dict = Body(...),
+    coretime: CoreTimeUpdate,
     db: Session = Depends(get_db)
 ):
-    """
-    学生のコアタイムを設定するAPI
-    """
     try:
-        # 学生の存在確認
         student = db.query(Student).filter(Student.student_id == student_id).first()
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
-
-        # コアタイムの設定を更新
-        student.core_time_1_day = coretime.get("core_time_1_day")
-        student.core_time_1_period = coretime.get("core_time_1_period")
-        student.core_time_2_day = coretime.get("core_time_2_day")
-        student.core_time_2_period = coretime.get("core_time_2_period")
+        
+        student.core_time_1_day = coretime.core_time_1_day
+        student.core_time_1_period = coretime.core_time_1_period
+        student.core_time_2_day = coretime.core_time_2_day
+        student.core_time_2_period = coretime.core_time_2_period
         
         db.commit()
-        
-        return {"status": "success", "message": "コアタイムを設定しました"}
+        return {"message": "Core time updated successfully"}
     except Exception as e:
-        logger.error(f"コアタイム設定エラー: {str(e)}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/coretime/{student_id}")

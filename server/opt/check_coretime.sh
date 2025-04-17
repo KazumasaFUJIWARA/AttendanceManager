@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # 環境変数の設定
-export PYTHONPATH=/opt/AttendanceManager/server/backend
+export PYTHONPATH=/app/backend
 
 # コアタイムチェックの実行
-cd /opt/AttendanceManager/scripts
+cd /app/backend
 python3 -c "
 import requests
 import datetime

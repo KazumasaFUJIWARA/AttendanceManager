@@ -62,4 +62,21 @@ class Alert(AlertBase):
     id: int
 
     class Config:
-        orm_mode = True 
+        orm_mode = True
+
+# CoreTime schemas
+class CoreTimeUpdate(BaseModel):
+    core_time_1_day: int
+    core_time_1_period: int
+    core_time_2_day: int
+    core_time_2_period: int
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "core_time_1_day": 1,
+                "core_time_1_period": 1,
+                "core_time_2_day": 3,
+                "core_time_2_period": 2
+            }
+        } 
