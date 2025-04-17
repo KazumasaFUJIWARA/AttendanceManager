@@ -183,6 +183,19 @@ docker-compose up -d
 docker-compose exec app python -c "from db.database import Base, engine; from models.models import Student, AttendanceLog, CurrentStatus, Alert; Base.metadata.create_all(bind=engine)"
 ```
 
+## システム設定
+- タイムゾーン: 日本時間（JST）に設定（`/etc/localtime`を`Asia/Tokyo`に設定）
+- cronジョブ: 日本時間に基づいて実行
+- ログ: 日本時間で記録
+- コンテナ設定:
+  - ホスト名: attend_app
+  - 環境変数: 
+    - `TELEGRAM_BOT_TOKEN`: Telegramボットのトークン
+    - `TELEGRAM_CHAT_ID`: 通知を送信するチャットID
+  - ボリュームマウント:
+    - ログ: `/var/log/cron.log`
+    - データベース: `/app/db/attendance.db`
+
 ## 注意事項
 - 本番環境では適切なセキュリティ設定が必要です
 - CORSの設定は開発環境用の設定となっています
