@@ -12,6 +12,22 @@ document.addEventListener('DOMContentLoaded', () => {
     loadStudentData();
     // 1分ごとにデータを更新
     setInterval(loadStudentData, 60000);
+    
+    // コアタイムチェックボタンのイベントリスナーを設定
+    const checkButtons = document.querySelectorAll('.check-coretime-btn');
+    checkButtons.forEach(button => {
+        button.addEventListener('click', async () => {
+            const period = button.dataset.period;
+            try {
+                await checkCoreTime(period);
+                // 成功メッセージを表示
+                alert('コアタイムチェックを実行しました。');
+            } catch (error) {
+                // エラーメッセージを表示
+                alert('コアタイムチェックに失敗しました: ' + error.message);
+            }
+        });
+    });
 });
 
 // 学生データの読み込み
@@ -73,6 +89,12 @@ async function loadStudentData() {
                 const coreTime1 = formatCoreTime(student.core_time_1_day, student.core_time_1_period);
                 const coreTime2 = formatCoreTime(student.core_time_2_day, student.core_time_2_period);
 
+                // 違反回数の表示を強調
+                const violationClass = student.core_time_violations > 0 ? 'violation' : '';
+                const violationText = student.core_time_violations > 0 ? 
+                    `<span class="text-danger fw-bold">${student.core_time_violations}回</span>` : 
+                    '<span class="text-muted">0回</span>';
+
                 // テーブル行の作成
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -84,9 +106,7 @@ async function loadStudentData() {
                     <td>${totalHours.toFixed(1)}時間</td>
                     <td>${coreTime1}</td>
                     <td>${coreTime2}</td>
-                    <td class="${student.core_time_violations > 0 ? 'violation' : ''}">
-                        ${student.core_time_violations}回
-                    </td>
+                    <td class="${violationClass}">${violationText}</td>
                 `;
                 studentList.appendChild(row);
             } catch (error) {
@@ -114,4 +134,44 @@ async function loadStudentData() {
 function formatCoreTime(day, period) {
     if (!day || !period) return '-';
     return `${DAYS_OF_WEEK[day]}曜${PERIODS[period]}`;
+}
+
+// コアタイムチェックの実行
+async function checkCoreTime(period) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/core-time/check/${period}`);
+        if (!response.ok) {
+            throw new Error(`コアタイムチェックに失敗: ${response.status}`);
+        }
+        const result = await response.json();
+        
+        // 更新された学生データを反映
+        if (result.updated_students) {
+            const studentList = document.getElementById('studentList');
+            const rows = studentList.getElementsByTagName('tr');
+            
+            for (const updatedStudent of result.updated_students) {
+                for (const row of rows) {
+                    const studentIdCell = row.cells[0];
+                    if (studentIdCell && studentIdCell.textContent === updatedStudent.student_id) {
+                        const violationCell = row.cells[6];
+                        if (violationCell) {
+                            const violationClass = updatedStudent.core_time_violations > 0 ? 'violation' : '';
+                            const violationText = updatedStudent.core_time_violations > 0 ? 
+                                `<span class="text-danger fw-bold">${updatedStudent.core_time_violations}回</span>` : 
+                                '<span class="text-muted">0回</span>';
+                            violationCell.className = violationClass;
+                            violationCell.innerHTML = violationText;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return result;
+    } catch (error) {
+        console.error('コアタイムチェックに失敗しました:', error);
+        throw error;
+    }
 } 

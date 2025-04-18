@@ -10,6 +10,43 @@
 - コアタイム違反の検出と通知
 - Telegram通知機能（入退室時の自動通知）
 
+## 自動実行タスク（Cron）
+システムは以下のスケジュールで自動タスクを実行します：
+
+### ログ管理
+- 毎月1日の午前0時に、前月のログを `/var/log/cron_YYYYMM.log` に保存し、現在のログファイルをクリアします。
+
+### コアタイムチェック
+以下の時間にコアタイムチェックを実行し、結果をログに記録します：
+- 月曜から金曜の09:00 - 1限のコアタイムチェック
+- 月曜から金曜の11:00 - 2限のコアタイムチェック
+- 月曜から金曜の13:30 - 3限のコアタイムチェック
+- 月曜から金曜の15:15 - 4限のコアタイムチェック
+- 月曜から金曜の16:00 - 5限のコアタイムチェック
+
+各コアタイムチェックの実行時には、以下の情報がログに記録されます：
+- 開始時刻（[START]）
+- APIレスポンス
+- 終了時刻（[END]）
+
+### crontabの設置場所
+crontabファイルは以下の場所に設置されています：
+- ソースコード: `server/backend/crontab`
+- コンテナ内: `/etc/cron.d/app-cron`
+
+コンテナ起動時に、Dockerfile内の以下の処理によりcrontabが設定されます：
+```dockerfile
+# cronの設定
+COPY backend/crontab /etc/cron.d/app-cron
+RUN echo "" >> /etc/cron.d/app-cron && \
+    chmod 0644 /etc/cron.d/app-cron && \
+    crontab /etc/cron.d/app-cron
+```
+
+### cronの注意事項
+- **Windows/Mac環境での注意**: WindowsやMacでDockerを使用している場合、crontab内の`localhost`が正しく解決されない可能性があります。この場合は、`localhost`の代わりに`host.docker.internal`を使用するか、コンテナ名（例：`attend_app`）を使用してください。
+- **タイムゾーンの確認**: cronが期待通りに動作しない場合は、コンテナ内の`/etc/localtime`の設定が実際のタイムゾーンと一致しているか確認してください。タイムゾーンがずれていると、スケジュールされた時間にタスクが実行されない可能性があります。
+
 ## APIエンドポイント
 
 ### 学生管理API
@@ -39,11 +76,25 @@
 
 ### コアタイム管理API
 - `GET /api/core-time/check/{period}` - 特定の時限のコアタイム遵守状況チェック
-  - パラメータ: `period` (1-4) - チェックする時限
-  - 出力: `{"violations": ["student_id1", "student_id2", ...]}`
-  - 機能: コアタイム違反を検出すると、Telegramに自動通知を送信します
+  - パラメータ: `period` (1-5) - チェックする時限
+  - 出力: 
+    ```json
+    {
+      "violations": ["student_id1", "student_id2", ...],
+      "updated_students": [
+        {
+          "student_id": "string",
+          "core_time_violations": integer
+        }
+      ]
+    }
+    ```
+  - 機能: 
+    - コアタイム違反を検出すると、Telegramに自動通知を送信
+    - 違反が見つかった場合、Alertテーブルに記録
+    - 学生の違反回数（core_time_violations）を更新
 - `GET /api/core-time/violations` - コアタイム違反履歴の取得
-  - 出力: アラートの配列 `[{"student_id": "string", "alert_date": "date", "alert_type": "string"}]`
+  - 出力: アラートの配列 `[{"student_id": "string", "alert_date": "date", "alert_period": integer, "id": integer}]`
 
 ### コアタイム設定API
 - `POST /api/coretime/{student_id}` - 学生のコアタイム設定
@@ -99,32 +150,35 @@ SQLiteデータベースを使用し、以下のテーブルを管理します�
 - SQLite
 
 ## セットアップ
-1. 必要なパッケージのインストール
+1. Dockerコンテナの起動
 ```bash
-pip install -r requirements.txt
+docker-compose up -d
 ```
 
-2. 環境変数の設定
-`.env`ファイルを作成し、以下の内容を設定してください：
-```
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_telegram_chat_id
+2. データベースの初期化
+```bash
+docker-compose exec app python -c "from db.database import Base, engine; from models.models import Student, AttendanceLog, CurrentStatus, Alert; Base.metadata.create_all(bind=engine)"
 ```
 
-3. データベースの初期化
-```bash
-python init_db.py
-```
-
-4. サーバーの起動
-```bash
-uvicorn main:app --reload
-```
+## システム設定
+- タイムゾーン: 日本時間（JST）に設定（`/etc/localtime`を`Asia/Tokyo`に設定）
+- cronジョブ: 日本時間に基づいて実行
+- ログ: 日本時間で記録
+- コンテナ設定:
+  - ホスト名: attend_app
+  - 環境変数: 
+    - `TELEGRAM_ID`: TelegramボットのID
+    - `TELEGRAM_ALERT`: 通知を送信するチャットID
+  - ボリュームマウント:
+    - ログ: `/var/log/cron.log`
+    - データベース: `/app/db/attendance.db`
 
 ## 注意事項
 - 本番環境では適切なセキュリティ設定が必要です
 - CORSの設定は開発環境用の設定となっています
-- Telegram通知機能を使用する場合は、有効なボットトークンとチャットIDの設定が必要です
+- Telegram通知機能を使用する場合は、システムの環境変数に以下の設定が必要です：
+  - `TELEGRAM_ID`: TelegramボットのID
+  - `TELEGRAM_ALERT`: 通知を送信するチャットID
 
 ## フロントエンド機能
 - リアルタイムの出席状況表示
@@ -195,3 +249,5 @@ app.jsは出席管理システムのフロントエンド部分を担当するJa
 - **目的**: コアタイムの曜日と時限を日本語表記に整形する
 - **引数**:
   - `day`: 曜日を表す数値（0: 日曜日, 1: 月曜日, ..., 6: 土曜日）
+  - `period`: 時限を表す数値（1: 1限, 2: 2限, ..., 4: 4限）
+- **戻り値**: 整形されたコアタイム文字列
