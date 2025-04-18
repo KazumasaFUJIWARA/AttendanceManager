@@ -15,4 +15,3 @@ services:
       - TELEGRAM_ID=${TELEGRAM_ID}
       - TELEGRAM_ALERT=${TELEGRAM_ALERT}
       - TZ=Asia/Tokyo
-    command: cron -f

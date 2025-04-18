@@ -10,6 +10,43 @@
 - コアタイム違反の検出と通知
 - Telegram通知機能（入退室時の自動通知）
 
+## 自動実行タスク（Cron）
+システムは以下のスケジュールで自動タスクを実行します：
+
+### ログ管理
+- 毎月1日の午前0時に、前月のログを `/var/log/cron_YYYYMM.log` に保存し、現在のログファイルをクリアします。
+
+### コアタイムチェック
+以下の時間にコアタイムチェックを実行し、結果をログに記録します：
+- 月曜から金曜の09:00 - 1限のコアタイムチェック
+- 月曜から金曜の11:00 - 2限のコアタイムチェック
+- 月曜から金曜の13:30 - 3限のコアタイムチェック
+- 月曜から金曜の15:15 - 4限のコアタイムチェック
+- 月曜から金曜の16:00 - 5限のコアタイムチェック
+
+各コアタイムチェックの実行時には、以下の情報がログに記録されます：
+- 開始時刻（[START]）
+- APIレスポンス
+- 終了時刻（[END]）
+
+### crontabの設置場所
+crontabファイルは以下の場所に設置されています：
+- ソースコード: `server/backend/crontab`
+- コンテナ内: `/etc/cron.d/app-cron`
+
+コンテナ起動時に、Dockerfile内の以下の処理によりcrontabが設定されます：
+```dockerfile
+# cronの設定
+COPY backend/crontab /etc/cron.d/app-cron
+RUN echo "" >> /etc/cron.d/app-cron && \
+    chmod 0644 /etc/cron.d/app-cron && \
+    crontab /etc/cron.d/app-cron
+```
+
+### cronの注意事項
+- **Windows/Mac環境での注意**: WindowsやMacでDockerを使用している場合、crontab内の`localhost`が正しく解決されない可能性があります。この場合は、`localhost`の代わりに`host.docker.internal`を使用するか、コンテナ名（例：`attend_app`）を使用してください。
+- **タイムゾーンの確認**: cronが期待通りに動作しない場合は、コンテナ内の`/etc/localtime`の設定が実際のタイムゾーンと一致しているか確認してください。タイムゾーンがずれていると、スケジュールされた時間にタスクが実行されない可能性があります。
+
 ## APIエンドポイント
 
 ### 学生管理API
@@ -39,7 +76,7 @@
 
 ### コアタイム管理API
 - `GET /api/core-time/check/{period}` - 特定の時限のコアタイム遵守状況チェック
-  - パラメータ: `period` (1-4) - チェックする時限
+  - パラメータ: `period` (1-5) - チェックする時限
   - 出力: 
     ```json
     {
@@ -111,66 +148,6 @@ SQLiteデータベースを使用し、以下のテーブルを管理します�
 - FastAPI
 - SQLAlchemy
 - SQLite
-
-## コアタイムチェックの定期実行
-システムは以下のスケジュールでコアタイムチェックを自動実行します：
-
-| 時限 | 実行時刻 | チェック番号 |
-|------|----------|--------------|
-| 1限  | 9:15     | 1           |
-| 2限  | 11:00    | 2           |
-| 3限  | 13:30    | 3           |
-| 4限  | 15:15    | 4           |
-| 5限  | 17:00    | 5           |
-
-### セットアップ方法
-1. `server/opt`ディレクトリ内のスクリプトをサーバーにコピー
-2. セットアップスクリプトを実行：
-   ```bash
-   sudo chmod +x setup_cron.sh
-   sudo ./setup_cron.sh
-   ```
-
-セットアップスクリプトは以下の処理を行います：
-- 必要なディレクトリの作成（`/opt/AttendanceManager/scripts`、`/opt/AttendanceManager/logs`）
-- スクリプトのインストールと実行権限の設定
-- cronの設定
-
-### cronの設定
-```bash
-# コアタイムチェック（平日のみ実行）
-15 9 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 1 >> /opt/AttendanceManager/logs/coretime.log 2>&1
-0 11 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 2 >> /opt/AttendanceManager/logs/coretime.log 2>&1
-30 13 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 3 >> /opt/AttendanceManager/logs/coretime.log 2>&1
-15 15 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 4 >> /opt/AttendanceManager/logs/coretime.log 2>&1
-0 17 * * 1-5 /opt/AttendanceManager/scripts/check_coretime.sh 5 >> /opt/AttendanceManager/logs/coretime.log 2>&1
-```
-
-### ログ管理
-システムは以下のログファイルを生成・管理します：
-
-1. **コアタイムチェックログ** (`/var/log/cron.log`)
-   - 各時限のコアタイムチェック実行結果
-   - 違反検出時の詳細情報
-   - エラー発生時のスタックトレース
-
-2. **ログローテーション**
-   - ログファイルは毎月1日の0時にローテーション
-   - 前月のログは `/var/log/cron_yyyymm.log` に保存（yyyymmは年月）
-   - ローテーション後、`cron.log` は空になる
-
-3. **ログフォーマット**
-   ```
-   [YYYY-MM-DD HH:MM:SS] [INFO/ERROR] メッセージ
-   ```
-   - タイムスタンプ: ログ生成時刻
-   - ログレベル: INFO（通常の実行ログ）、ERROR（エラー発生時）
-   - メッセージ: 実行結果やエラー内容の詳細
-
-4. **ログ監視**
-   - システム管理者は定期的にログを確認
-   - エラー発生時は即座に通知
-   - ログの分析によるシステム改善の実施
 
 ## セットアップ
 1. Dockerコンテナの起動
