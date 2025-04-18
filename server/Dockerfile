@@ -11,7 +11,7 @@ COPY opt/check_coretime.sh /app/check_coretime.sh
 
 # cronのインストール
 RUN apt-get update && \
-    apt-get install -y cron python3 python3-pip curl && \
+    apt-get install -y cron python3 python3-pip curl vim-tiny && \
     rm -rf /var/lib/apt/lists/*
 
 # Pythonの依存パッケージをインストール

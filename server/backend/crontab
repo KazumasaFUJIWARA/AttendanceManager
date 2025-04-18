@@ -2,7 +2,7 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
 # ログを1か月毎に /var/log/cron_yyyymm.logに cat してから空にする
-0 0 1 * * cat /var/log/cron.log >> /var/log/cron_$(date +%Y%m).log && > /var/log/cron.log
+0 0 1 * * /bin/bash -c 'cat /var/log/cron.log >> /var/log/cron_$(date +\%Y\%m).log && > /var/log/cron.log'
 
 
 # コアタイムチェック（月曜から金曜）
@@ -11,3 +11,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 30 13 * * 1-5 curl -X GET http://host.docker.internal:8889/api/core-time/check/3 >> /var/log/cron.log 2>&1      
 15 15 * * 1-5 curl -X GET http://host.docker.internal:8889/api/core-time/check/4 >> /var/log/cron.log 2>&1      
 0 16 * * 1-5 curl -X GET http://host.docker.internal:8889/api/core-time/check/5 >> /var/log/cron.log 2>&1 
+40 16 * * * curl -X GET http://host.docker.internal:8889/api/current-status/ >> /var/log/cron.log 2>&1 
+41 16 * * 1-5 curl -X GET http://host.docker.internal:8889/api/core-time/check/1 >> /var/log/cron.log 2>&1 
+41 16 * * 1-5 curl -f -s http://host.docker.internal:8889/api/core-time/check/1 >> /var/log/cron.log 2>> /var/log/cron_errors.log
+
+* * * * * curl -X GET http://host.docker.internal:8889/api/current-status/ >> /var/log/cron_test.log 2>&1 
+
