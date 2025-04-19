@@ -1,338 +1,310 @@
-# vim: set ft=python :
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-#2023/12/19: 何故か前回に読み込んだIDを削除する挙動があったため, 削除の確認ボタンを追加
-#2023/12/21: 全体の記録をとっていなかったのでとる
+# AttendanceManager.py - NFC読み取りクライアント（APIサーバー連携版）
 #
 
-# {{{ Librarlies
+# ライブラリのインポート
 import tkinter as tk
 from tkinter import ttk
 from tkinter import font
 import nfc
+from nfc.tag import Tag
+from nfc.tag.tt3 import BlockCode, ServiceCode, Type3Tag
+from nfc.tag.tt3_sony import FelicaStandard
 import time
 import threading
 import json
 import requests
-from ID_handelr import remove_register
-from ID_handelr import add_entry
-from ID_handelr import update_entry
-from ID_handelr import read_entry
-#}}}
+import sys
+import os
+from typing import cast
+from datetime import datetime
+import queue
 
-# {{{ global 変数の用意
-key_id = None
-file_path = "List"
-record_path = "Record"
-entry_number = None
-entry_name = None
-# 登録名入力待ちの判定
-on_going_register = False
-# Debug 用の停止命令
+# 設定
+API_BASE_URL = "http://localhost:8889/api"  # APIサーバーのベースURL
+WINDOW_TITLE = "出席管理システム"
+BACKGROUND_COLOR = "black"
+TEXT_COLOR = "green"
+ERROR_COLOR = "red"  # エラー表示用の色を追加
+FONT_FAMILY = "Arial"  # Debianでも利用可能なフォントに変更
+FONT_SIZE = 22
+TITLE_FONT_SIZE = 28
+SYSTEM_CODE = 0x809E  # FeliCaのシステムコード
+
+# グローバル変数
 close_order = False
-# }}}
 
-#{{{ Tkinter ウィンドウの作成と準備
-root = tk.Tk()
-root.title("ver 0.1")
+# メインウィンドウの設定
+class AttendanceManagerApp:
+	def __init__(self, root):
+		self.root = root
+		self.setup_ui()
+		self.message_queue = queue.Queue()  # メッセージキューを追加
+		
+		# メッセージ処理の定期実行を開始
+		self.process_messages()
+		
+		# NFCリーダースレッドの開始
+		self.nfc_thread = threading.Thread(target=self.nfc_read_loop)
+		self.nfc_thread.daemon = True
+		self.nfc_thread.start()
 
-# 全画面表示
-root.attributes('-fullscreen',True)
-root.configure(bg="black")
+	def setup_ui(self):
+		# ウィンドウの基本設定
+		self.root.title(WINDOW_TITLE)
+		self.root.attributes('-fullscreen', True)
+		self.root.configure(bg=BACKGROUND_COLOR)
+		self.root['padx'] = 100
+		self.root['pady'] = 100
 
-# ウィンドウ全体のパディング
-root['padx'] = 100
-root['pady'] = 100
+		# フォントの設定
+		default_font = font.nametofont("TkDefaultFont")
+		try:
+			default_font.configure(family=FONT_FAMILY, size=FONT_SIZE)
+		except tk.TclError:
+			default_font.configure(family="Arial", size=FONT_SIZE)  # フォールバック
+		title_font = (FONT_FAMILY, TITLE_FONT_SIZE)
+		
+		# スタイルの設定
+		style = ttk.Style()
+		style.configure("TButton", padding=15, foreground=TEXT_COLOR, background=BACKGROUND_COLOR, font=(FONT_FAMILY, FONT_SIZE))
+		style.configure("Small.TButton", padding=5, foreground=TEXT_COLOR, background=BACKGROUND_COLOR, font=(FONT_FAMILY, FONT_SIZE-8))
+		style.configure("Error.TLabel", foreground=ERROR_COLOR, background=BACKGROUND_COLOR, font=(FONT_FAMILY, FONT_SIZE))
 
-# ウィンドウの幅と高さを取得
-window_width = root.winfo_reqwidth()
-window_height = root.winfo_reqheight()
-#}}}
+		# メッセージ表示用の変数
+		self.system_message1 = tk.StringVar()
+		self.system_message2 = tk.StringVar()
+		self.response_message = tk.StringVar()
+		
+		self.system_message1.set("システム: カードをリーダーにかざしてください")
+		self.system_message2.set("システム: 読み取り待機中...")
+		self.response_message.set("")
 
-# {{{ フォントの設定
-default_font = font.nametofont("TkDefaultFont")
-default_font.configure(family="BIZ UDPMincho", size=22)
-title_font=("BIZ UDPMincho", 28)
-style = ttk.Style()
-style.configure("TRadiobutton", padding=15, foreground="green", background="black", size=22)
-# }}}
+		# UI要素の配置
+		title = tk.Label(self.root, text="出席管理システム", font=title_font, foreground=TEXT_COLOR, bg=BACKGROUND_COLOR)
+		title.grid(column=0, row=0, columnspan=3, pady=(0, 30))
+		
+		# システムメッセージの表示
+		system_output1 = tk.Label(self.root, textvariable=self.system_message1, foreground=TEXT_COLOR, bg=BACKGROUND_COLOR, pady=10)
+		system_output2 = tk.Label(self.root, textvariable=self.system_message2, foreground=TEXT_COLOR, bg=BACKGROUND_COLOR, pady=10)
+		system_output1.grid(row=1, column=0, columnspan=3, sticky=tk.W)
+		system_output2.grid(row=2, column=0, columnspan=3, sticky=tk.W)
+		
+		# APIレスポンス表示エリア
+		response_area = tk.Label(self.root, textvariable=self.response_message, foreground=TEXT_COLOR, bg=BACKGROUND_COLOR, pady=20, justify=tk.LEFT)
+		response_area.grid(row=3, column=0, columnspan=3, sticky=tk.W)
+		
+		# 列の設定
+		self.root.columnconfigure(0, weight=2)
+		self.root.columnconfigure(1, weight=1)
+		self.root.columnconfigure(2, weight=1)
 
-#{{{ IO関連の準備
-system_message1 = tk.StringVar()
-system_message2 = tk.StringVar()
+	def process_messages(self):
+		"""メッセージキューからメッセージを処理"""
+		try:
+			while True:
+				message = self.message_queue.get_nowait()
+				if message.get('type') == 'system1':
+					self.system_message1.set(message['text'])
+				elif message.get('type') == 'system2':
+					self.system_message2.set(message['text'])
+				elif message.get('type') == 'response':
+					self.response_message.set(message['text'])
+				elif message.get('type') == 'error':
+					# エラーメッセージは赤色で表示
+					self.system_message1.set(message['text'])
+					self.system_message2.set("")
+					self.response_message.set("")
+		except queue.Empty:
+			pass
+		finally:
+			# 100ミリ秒後に再度チェック
+			self.root.after(100, self.process_messages)
 
-system_message1.set("システム: 現在, 入退室記録モードです.")
-system_message2.set("システム: 学生証を読み込んでください.")
+	def update_ui(self, message_type: str, text: str):
+		"""スレッドセーフなUI更新"""
+		self.message_queue.put({'type': message_type, 'text': text})
 
-def message_timelog_mode():
-	# 入退室記録モードに変更時のメッセージ
-	system_message1.set("システム: 現在, 入退室記録モードです.")
-	system_message2.set("システム: 学生証を読み込んでください.")
-
-def message_register_mode():
-	# 登録情報編集モードに変更時のメッセージ
-	system_message1.set("システム: 現在, 登録情報編集モードです.")
-	system_message2.set("システム: 学生証を読み込んでください.")
-
-entry_width = window_width // 3
-entry = tk.Entry(root, width=entry_width)
-#}}}
-
-#{{{ def register_entry():
-def register_entry():
-	# Entry登録追加ボタンの処理
-	global file_path
-	entry_name = entry.get()
-	if entry_name == "":
-		system_message1.set("システム: エラー: 登録名が確認できませんでした")
-		system_message2.set("システム: 学生証を読み直してください")
-		entry.delete(0, tk.END)
-		entry.grid_remove()
-		register_button.grid_remove()
-		root.after(2500,message_register_mode)
-	else:
-		add_entry(file_path, key_id, entry_name)
-		message = "システム: " +  entry_name + " さんを登録しました"
-		system_message2.set(message)
-		entry.delete(0, tk.END)
-		entry.grid_remove()
-		register_button.grid_remove()
-		root.after(2500,message_register_mode)
-
-	# 登録が入力が終わったことを伝える
-	global on_going_register
-	on_going_register = False
-
-	radio_button1.grid(row=1, column=1,pady=20)
-#}}}
-
-#{{{ def delete_cancel():
-def delete_cancel():
-	global entry_name
-
-	# ボタン削除
-	delete_button.grid_remove()
-	cancel_button.grid_remove()
-
-	message = "システム: " +  entry_name + " さんの登録を保持します"
-	system_message2.set(message)
-
-	root.after(1500,message_register_mode)
-
-	# モード変更ボタンの再表示
-	radio_button1.grid(row=1, column=1,pady=20)
-
-	global on_going_register
-	on_going_register = False
-#}}}
-
-#{{{ def delete_register()
-def delete_register():
-	global file_path
-	global entry_name
-	global entry_number
-
-	# ボタン削除
-	delete_button.grid_remove()
-	cancel_button.grid_remove()
-
-	remove_register(file_path,entry_number)
-
-	message = "システム: " +  entry_name + " さんの登録を削除しました"
-	system_message2.set(message)
-
-	root.after(1500,message_register_mode)
-
-	# モード変更ボタンの再表示
-	radio_button1.grid(row=1, column=1,pady=20)
-
-	global on_going_register
-	on_going_register = False
-#}}}
-
-#{{{ def window_close()
-def window_close():
-	global close_order
-	close_order = True
-	root.destroy()
-#}}}
-
-# {{{ def webhook_post():
-def webhook_post(webhook_title, webhook_message):
-	webhook_address = "https://ryu365.webhook.office.com/webhookb2/585cc2b0-ed47-41cd-8bd1-39b5befc07b2@23b65fdf-a4e3-4a19-b03d-12b1d57ad76e/IncomingWebhook/7184503f4b0d40789d95ea5f971d3c4d/3662ba78-b3f0-47e3-9820-376798dc17d5/V2eyRuG9PZKe50zaNYR8D7Ts520qNvuQzZFBrfrcx-ibY1"
-	payload={"text": webhook_title + ":" + webhook_message}
-	response=requests.post(webhook_address, headers={"Content-Type": "application/json"}, data=json.dumps(payload))
-
-	if response.status_code == 200:
-		print("Sucessful post")
-	else:
-		print(response.text)
-#}}}
-
-# {{{ Tkinter Windowの設置
-# ラジオボタン選択された値を保持するための変数
-current_mode = tk.StringVar()
-
-# デフォルトの選択値を設定
-current_mode.set("Log")
-
-radio_button1 = ttk.Radiobutton(root, text="入退室記録モード",
-		variable=current_mode,
-		value="Log",
-		width=20,
-		command=message_timelog_mode)
-radio_button2 = ttk.Radiobutton(root, text="登録情報編集モード",
-		variable=current_mode,
-		value="Register",
-		width=20,
-		command=message_register_mode)
-
-# 登録ボタンの設定
-register_button = tk.Button(root, text="登録", command=register_entry)
-close_button = tk.Button(root, text="Close", command=window_close)
-delete_button = tk.Button(root, text="削除", command=delete_register)
-cancel_button = tk.Button(root, text="取消", command=delete_cancel)
-
-
-# tkinterに配置
-title = tk.Label(root, text="藤原和将研究室 入退室管理", font=title_font, foreground="green", bg="black")
-title.grid(column=0, row=0, columnspan=3)
-radio_button1.grid(row=1, column=1,pady=20)
-radio_button2.grid(row=1, column=2)
-system_output1 = tk.Label(root, textvariable=system_message1, foreground="green", bg="black", pady=10)
-system_output2 = tk.Label(root, textvariable=system_message2, foreground="green", bg="black", pady=10)
-system_output1.grid(row=2, column=0, columnspan=3, sticky=tk.W)
-system_output2.grid(row=3, column=0, columnspan=3, sticky=tk.W)
-# Debug 用
-# close_button.grid(row=9, column=1)
-
-# 列ごとの幅指定
-root.columnconfigure(0, weight=2)
-root.columnconfigure(1, weight=1)
-root.columnconfigure(2, weight=1)
-# }}}
-
-# {{{  def on_connect(tag):
-def on_connect(tag):
-	# nfc カード接続時のid読み取り(小文字)
-	global key_id
-	key_id=tag.identifier.hex()
-#}}}
-
-# {{{ def nfc_register():
-def nfc_register():
-	#global 変数の読み込み
-	global file_path
-	global record_path
-	global key_id
-	global current_mode
-	global on_going_register
-	global close_order
-	global entry_number
-	global entry_name
-
-	# nfc カードの読み込み用意
-	clf = nfc.ContactlessFrontend('usb')
-	# カード接続時にidのみを読み取り
-	#  clf.connect(rdwr={'on-connect': on_connect})
-	# terminate を指定しないと, 読み取りを中断できない
-	clf.connect(rdwr={'on-connect': on_connect}, terminate=lambda: close_order)
-
-	# List から該当のidがあるか判定
-	# entry_number は該当がなければ-1, あれば行数-1をかえす
-	# entry_name は該当があれば登録名を返す
-	entry_number, entry_name = read_entry(file_path, key_id)
-
-	# 入退室記録モードの場合
-	if current_mode.get() == "Log":
-
-		# 登録がない場合の処理
-		if entry_number == -1:
-			# メッセージを表示して読み取り再開
-			system_message1.set("システム: 登録のない学生証が読みこまれました")
-			system_message2.set("システム: 入退室情報を記録するためには，まず登録をしてください")
-			root.after(2500,message_timelog_mode)
-
-		# 登録がない場合の処理
-		else:
-			system_message1.set("システム: 登録のある学生証が読みこまれました")
-
-			# statusは更新された登録行の名前以外の値をタブ区切りでリストにしたもの
-			# status[0]: 1 : 入室 : 0 : 退室
-			# status[1]: 在室時間の時間数 : 入室時は0となっている
-			# status[2]: 在室時間の分数 : 入室時は0となっている
-			status = update_entry(file_path, key_id)
-			# add_record(record_path, entry_name, status[0])
-
-			if status[0]:
-				message = "システム: " +  entry_name + " さんようこそ"
-				system_message2.set(message)
-				webhook_title = entry_name
-				webhook_message = "入室"
-				webhook_post(webhook_title, webhook_message)
-
-				# 入室時は多分メッセージを読まないので，１秒
-				root.after(1000,message_timelog_mode)
-			else:
-				message = "システム: " +  entry_name + " さん さようなら在室時間は" + str(status[1]) + "時間" + str(status[2]) + "分でした"
-				system_message2.set(message)
-				webhook_title = entry_name
-				webhook_message = "退室: 在室時間は" + str(status[1]) + "時間" + str(status[2]) + "分"
-				webhook_post(webhook_title, webhook_message)
-				root.after(2500,message_timelog_mode)
-
-	# 登録モードの場合
-	else:
-
-		# 登録作業に入るため, 他の作業を受け付けないフラグを立てる
-		on_going_register = True
-
-		# 登録があるか調べる
-		if entry_number == -1:
-
-			# 氏名入力中にモード変更させない
-			radio_button1.grid_remove()
-
-			system_message1.set("システム: 登録のない学生証が読みこまれました")
-			system_message2.set("システム: 登録名を入力して登録してください")
-			entry.grid(row=4, column=0, columnspan=2, pady=15, sticky="e")
-			register_button.grid(row=4, column=2, sticky="w", padx=10)
-		else:
-			# 氏名入力中にモード変更させない
-			radio_button1.grid_remove()
-
-			system_message1.set("システム: 登録のある学生証が読みこまれました")
-
-			message = "システム: " +  entry_name + " さんの登録を削除しますか？"
-			system_message2.set(message)
-
-			delete_button.grid(row=4, column=1)
-			cancel_button.grid(row=4, column=2)
-
-	clf.close()
-
-	# 登録名の入力待機
-	# entry_register 内でglobal変数のon_going_registerがFalseになるまで待機する.
-	# 上のif内に書いたほうがいいかもしれないがclfはこの段階で閉じて良いのでここに配置した.
-	try:
-		while on_going_register:
-			time.sleep(1)
-	except KeyboardInterrupt:
+	def window_close(self):
+		"""アプリケーションの終了処理"""
+		global close_order
 		close_order = True
+		self.root.after(1000, self.root.destroy)  # 1秒後にウィンドウを閉じる
 
-	if not close_order:
-		root.after(1000,nfc_read)
-#}}}
+	def read_data_block(self, tag: Type3Tag, service_code_number: int, block_code_number: int) -> bytearray:
+		"""FeliCaカードからデータブロックを読み取る"""
+		service_code = ServiceCode(service_code_number, 0x0B)
+		block_code = BlockCode(block_code_number)
+		try:
+			read_bytearray = cast(bytearray, tag.read_without_encryption([service_code], [block_code]))
+			return read_bytearray
+		except Exception as e:
+			self.system_message1.set(f"システム: データ読み取りエラー")
+			self.system_message2.set(f"エラー内容: {str(e)}")
+			return bytearray()
 
-#{{{ def nfc_read():
-# nfcカード読み取り用のスレッドを起動する.
-# スレッドを別にしないとUIの操作よりもカード読み取り待機が優先されて操作ができない
-def nfc_read():
-	# nfc.readの待機状態を外部から中断するために工夫が必要か
-	nfc_thread = threading.Thread(target=nfc_register)
-	nfc_thread.start()
-nfc_read()
-#}}}
+	def get_student_id(self, tag: Type3Tag) -> str:
+		"""学生IDの読み取り（テストカード用）"""
+		try:
+			student_id_bytearray = self.read_data_block(tag, 106, 0)
+			return student_id_bytearray.decode().strip()
+		except:
+			# 読み取りに失敗した場合はIDmを代わりに使用
+			return tag.identifier.hex()
 
-# ウィンドウを表示
-root.mainloop()
+	def on_connect(self, tag: Tag) -> bool:
+		"""NFCカード接続時の処理"""
+		self.system_message1.set("システム: カードを検出しました")
+		self.system_message2.set("カード情報を読み取り中...")
+		
+		try:
+			# FeliCaカードの場合の処理
+			if isinstance(tag, FelicaStandard) and SYSTEM_CODE in tag.request_system_code():
+				tag.idm, tag.pmm, *_ = tag.polling(0xFE00)
+				student_id = self.get_student_id(tag)
+				self.handle_card_read(student_id)
+			else:
+				# その他のカードはIDのみで処理
+				student_id = tag.identifier.hex()
+				self.handle_card_read(student_id)
+		except Exception as e:
+			self.system_message1.set(f"システム: カード読み取りエラー")
+			self.system_message2.set(f"エラー内容: {str(e)}")
+			
+		return True  # カードが離れるまで待機
+
+	def on_release(self, tag: Tag) -> None:
+		"""カードがリーダーから離れた時の処理"""
+		self.system_message1.set("システム: カードをリーダーにかざしてください")
+		self.system_message2.set("システム: 読み取り待機中...")
+
+	def nfc_read_loop(self):
+		"""NFCカード読み取りのメインループ"""
+		global close_order
+		
+		while not close_order:
+			try:
+				# NFCリーダーの初期化（with構文で自動クローズ）
+				with nfc.ContactlessFrontend('usb') as clf:
+					# カード接続待機
+					self.update_ui('system1', "システム: カードをリーダーにかざしてください")
+					self.update_ui('system2', "システム: 読み取り待機中...")
+					
+					# カード読み取り
+					clf.connect(rdwr={
+						"on-connect": self.on_connect, 
+						"on-release": self.on_release
+					}, terminate=lambda: close_order)
+				
+			except Exception as e:
+				error_message = f"NFCリーダーのエラー: {str(e)}"
+				self.update_ui('system1', "システム: NFCリーダーのエラーが発生しました")
+				self.update_ui('system2', f"エラー内容: {str(e)}")
+				self.log_to_file(error_message)
+				time.sleep(3)
+				
+			time.sleep(1)  # ループの間隔を設定
+
+	def log_to_file(self, message: str):
+		"""ログをファイルに記録"""
+		timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+		log_message = f"{timestamp} - {message}\n"
+		
+		try:
+			with open("attend.log", "a", encoding="utf-8") as f:
+				f.write(log_message)
+		except Exception as e:
+			print(f"ログファイル書き込みエラー: {e}")
+
+	def handle_card_read(self, card_id):
+		"""カードが読み取られた時の処理"""
+		self.system_message1.set("システム: カードを読み取りました")
+		self.system_message2.set(f"カードID: {card_id}")
+		self.log_to_file(f"カード読み取り: {card_id}")
+		
+		try:
+			# APIに入退室データを送信
+			self.send_attendance_data(card_id)
+		except Exception as e:
+			error_message = f"カード読み取りエラー: {str(e)}"
+			self.system_message1.set("システム: APIとの通信中にエラーが発生しました")
+			self.system_message2.set(f"エラー内容: {str(e)}")
+			self.response_message.set("")
+			self.log_to_file(error_message)
+		
+	def send_attendance_data(self, card_id):
+		"""APIサーバーに入退室データを送信"""
+		url = f"{API_BASE_URL}/attendance-now/{card_id}"
+		
+		self.system_message1.set("システム: サーバーと通信中...")
+		self.system_message2.set("しばらくお待ちください...")
+		
+		try:
+			response = requests.post(url)
+			
+			if response.status_code == 200:
+				# 成功時の処理
+				data = response.json()
+				name = data.get("name", "不明")
+				status = data.get("status", "不明")
+				
+				# 日本語で状態を表示
+				status_text = "入室" if status == "入室" else "退室"
+				
+				self.system_message1.set(f"システム: {name} さんが{status_text}しました")
+				self.system_message2.set(f"現在の状態: {status_text}")
+				
+				# レスポンスの詳細を表示
+				self.response_message.set(f"名前: {name}\n状態: {status_text}\n時刻: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+				
+				# ログに記録
+				self.log_to_file(f"入退室記録: {name} - {status_text}")
+				
+			else:
+				# エラー時の処理
+				error_message = f"APIリクエスト失敗: {response.status_code} - {response.text}"
+				self.system_message1.set("システム: APIリクエストが失敗しました")
+				self.system_message2.set(f"ステータスコード: {response.status_code}")
+				self.response_message.set(f"エラー内容: {response.text}")
+				self.log_to_file(error_message)
+				
+		except requests.exceptions.RequestException as e:
+			# 通信エラー時の処理
+			error_message = f"サーバー通信エラー: {str(e)}"
+			self.system_message1.set("システム: サーバーとの通信に失敗しました")
+			self.system_message2.set("ネットワーク接続を確認してください")
+			self.response_message.set(f"エラー内容: {str(e)}")
+			self.log_to_file(error_message)
+
+	def get_student_info(self, student_id):
+		"""学生IDから学生情報を取得"""
+		url = f"{API_BASE_URL}/students/{student_id}"
+		
+		try:
+			response = requests.get(url)
+			response.raise_for_status()
+			return response.json()
+		except requests.exceptions.RequestException as e:
+			print(f"学生情報取得エラー: {e}")
+			raise
+
+	def get_attendance_history(self, student_id, days=7):
+		"""指定された学生の出席履歴を取得"""
+		url = f"{API_BASE_URL}/attendance/{student_id}?days={days}"
+		
+		try:
+			response = requests.get(url)
+			response.raise_for_status()
+			return response.json()
+		except requests.exceptions.RequestException as e:
+			print(f"出席履歴取得エラー: {e}")
+			raise
+
+# メイン処理
+if __name__ == "__main__":
+	# アプリケーションの開始
+	root = tk.Tk()
+	app = AttendanceManagerApp(root)
+	root.mainloop()
