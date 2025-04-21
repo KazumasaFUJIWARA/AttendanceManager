@@ -30,7 +30,7 @@ def on_connect(tag: Tag) -> bool:
 	if isinstance(tag, FelicaStandard) and SYSTEM_CODE in tag.request_system_code():  # カードがFeliCaでかつシステムコードが存在する場合
 		tag.idm, tag.pmm, *_ = tag.polling(0xFE00)
 		print(get_student_id(tag))
-		print(get_student_name(tag))
+		# print(get_student_name(tag))
 	return True  # Trueを返しておくとタグが存在しなくなるまで待機される
 
 

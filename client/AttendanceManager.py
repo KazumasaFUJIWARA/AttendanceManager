@@ -23,7 +23,8 @@ from datetime import datetime
 import queue
 
 # 設定
-API_BASE_URL = "http://localhost:8889/api"  # APIサーバーのベースURL
+URL = os.environ.get("ATTEND_SERVER")
+API_BASE_URL = "http://" + URL + "/api"  # APIサーバーのベースURL
 WINDOW_TITLE = "出席管理システム"
 BACKGROUND_COLOR = "black"
 TEXT_COLOR = "green"
@@ -161,13 +162,11 @@ class AttendanceManagerApp:
 		
 		try:
 			# FeliCaカードの場合の処理
-			if isinstance(tag, FelicaStandard) and SYSTEM_CODE in tag.request_system_code():
+			if isinstance(tag, FelicaStandard) and SYSTEM_CODE in tag.request_system_code():  # カードがFeliCaでかつシステムコードが存在する場合
 				tag.idm, tag.pmm, *_ = tag.polling(0xFE00)
 				student_id = self.get_student_id(tag)
-				self.handle_card_read(student_id)
-			else:
-				# その他のカードはIDのみで処理
-				student_id = tag.identifier.hex()
+				# 不要な文字を削除して小文字に変更
+				student_id = student_id[2:-2].lower().strip('\x00')
 				self.handle_card_read(student_id)
 		except Exception as e:
 			self.system_message1.set(f"システム: カード読み取りエラー")
@@ -237,12 +236,15 @@ class AttendanceManagerApp:
 	def send_attendance_data(self, card_id):
 		"""APIサーバーに入退室データを送信"""
 		url = f"{API_BASE_URL}/attendance-now/{card_id}"
+		headers = {
+		    "accept": "application/json"
+		}
 		
 		self.system_message1.set("システム: サーバーと通信中...")
 		self.system_message2.set("しばらくお待ちください...")
 		
 		try:
-			response = requests.post(url)
+			response = requests.post(url, headers=headers)
 			
 			if response.status_code == 200:
 				# 成功時の処理
