@@ -23,6 +23,13 @@ RUN echo "" >> /etc/cron.d/app-cron && \
     chmod 0644 /etc/cron.d/app-cron && \
     crontab /etc/cron.d/app-cron
 
+# cronで利用するスクリプトのコピー
+COPY backend/check_core_time.sh /bin/check_core_time.sh
+COPY backend/reset_status.sh /bin/reset_status.sh
+# スクリプトに実行権限を付与
+RUN chmod +x /bin/check_core_time.sh
+RUN chmod +x /bin/reset_status.sh
+
 # ログファイルを作成
 RUN touch /var/log/cron.log
 

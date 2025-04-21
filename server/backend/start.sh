@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 重要：環境変数を cron 用に保存
+echo "ATTEND_SERVER=${ATTEND_SERVER}" > /etc/cron.env
+
 # cronサービスを起動
 service cron start
 
