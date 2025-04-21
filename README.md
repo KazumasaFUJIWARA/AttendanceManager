@@ -73,6 +73,19 @@ RUN echo "" >> /etc/cron.d/app-cron && \
   - 出力: 入室状況の配列 `[{"student_id": "string", "entry_time": "datetime"}]`
 - `POST /api/attendance-now/{student_id}` - 現在時刻での入退室記録
   - 出力: `{"name": "string", "status": "入室" | "退室"}`
+- `POST /api/reset-status` - 入室状況のリセット
+  - 機能: 全学生の入室状況をリセット
+  - 出力: 
+    ```json
+    {
+        "status": "success",
+        "message": "入室状況をリセットしました。",
+        "reset_students": [
+            "・学生名さん（学籍番号：XXXXXX）",
+            ...
+        ]
+    }
+    ```
 
 ### コアタイム管理API
 - `GET /api/core-time/check/{period}` - 特定の時限のコアタイム遵守状況チェック

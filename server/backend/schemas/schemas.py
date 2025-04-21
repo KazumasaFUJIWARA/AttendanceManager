@@ -40,7 +40,7 @@ class AttendanceResponse(BaseModel):
 # CurrentStatus schemas
 class CurrentStatusBase(BaseModel):
     student_id: str
-    entry_time: datetime
+    entry_time: Optional[datetime] = None
 
 class CurrentStatusCreate(CurrentStatusBase):
     pass

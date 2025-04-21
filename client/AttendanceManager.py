@@ -61,7 +61,7 @@ class AttendanceManagerApp:
 		self.root['pady'] = 100
 
 		# フォントの設定
-		default_font = font.nametofont("TkDefaultFont")
+default_font = font.nametofont("TkDefaultFont")
 		try:
 			default_font.configure(family=FONT_FAMILY, size=FONT_SIZE)
 		except tk.TclError:
@@ -69,7 +69,7 @@ class AttendanceManagerApp:
 		title_font = (FONT_FAMILY, TITLE_FONT_SIZE)
 		
 		# スタイルの設定
-		style = ttk.Style()
+style = ttk.Style()
 		style.configure("TButton", padding=15, foreground=TEXT_COLOR, background=BACKGROUND_COLOR, font=(FONT_FAMILY, FONT_SIZE))
 		style.configure("Small.TButton", padding=5, foreground=TEXT_COLOR, background=BACKGROUND_COLOR, font=(FONT_FAMILY, FONT_SIZE-8))
 		style.configure("Error.TLabel", foreground=ERROR_COLOR, background=BACKGROUND_COLOR, font=(FONT_FAMILY, FONT_SIZE))
@@ -130,8 +130,8 @@ class AttendanceManagerApp:
 
 	def window_close(self):
 		"""アプリケーションの終了処理"""
-		global close_order
-		close_order = True
+	global close_order
+	close_order = True
 		self.root.after(1000, self.root.destroy)  # 1秒後にウィンドウを閉じる
 
 	def read_data_block(self, tag: Type3Tag, service_code_number: int, block_code_number: int) -> bytearray:
@@ -309,4 +309,4 @@ if __name__ == "__main__":
 	# アプリケーションの開始
 	root = tk.Tk()
 	app = AttendanceManagerApp(root)
-	root.mainloop()
+root.mainloop()

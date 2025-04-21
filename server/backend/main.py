@@ -274,6 +274,66 @@ async def record_attendance_now(
 		await send_telegram_message(message)
 		
 		return AttendanceResponse(name=student.name, status="退室")
+
+@app.post("/api/reset-status")
+async def reset_status(db: Session = Depends(get_db)):
+    """
+    全学生の入室状況をリセットするAPI
+    CurrentStatusテーブルのレコードをすべて削除します
+    """
+    try:
+        # 現在の入室状況を取得（ログ用）
+        current_statuses = db.query(CurrentStatus).join(
+            Student,
+            CurrentStatus.student_id == Student.student_id
+        ).with_entities(
+            Student.name,
+            Student.student_id,
+            CurrentStatus.entry_time
+        ).all()
+        
+        if current_statuses:
+            # リセットされる学生の名前リストを作成
+            student_details = [
+                f"・{name}さん（学籍番号：{student_id}）" 
+                for name, student_id, _ in current_statuses
+            ]
+            student_list = "\n".join(student_details)
+            
+            # すべての入室状況レコードを削除
+            db.query(CurrentStatus).delete()
+            
+            # 変更をコミット
+            db.commit()
+            
+            # Telegram通知を送信
+            message = (
+                f"🔄 入室状況をリセットしました。\n\n"
+                f"リセットされた学生:\n{student_list}"
+            )
+            await send_telegram_message(message)
+            
+            return {
+                "status": "success",
+                "message": "入室状況をリセットしました。",
+                "reset_students": student_details
+            }
+        else:
+            message = "リセット対象の学生はいませんでした。"
+            await send_telegram_message(message)
+            return {
+                "status": "success",
+                "message": message,
+                "reset_students": []
+            }
+            
+    except Exception as e:
+        db.rollback()
+        logger.error(f"入室状況リセットエラー: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"入室状況のリセット中にエラーが発生しました: {str(e)}"
+        )
 #}}}
 
 #{{{ コアタイム管理API
